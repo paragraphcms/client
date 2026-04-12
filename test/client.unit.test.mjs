@@ -139,6 +139,197 @@ test("Client converts API errors into ParagraphApiError", async () => {
   );
 });
 
+test("page.getBySlug resolves the page through slug lookup and returns full details", async () => {
+  const calls = [];
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async (input) => {
+      const url = new URL(String(input));
+      calls.push(url);
+
+      if (url.pathname === "/v1/pages") {
+        return Response.json({
+          data: [
+            {
+              id: "page-1",
+              slug: "pricing",
+            },
+          ],
+          meta: {
+            page: 1,
+            limit: 100,
+            total_items: 1,
+            total_pages: 1,
+            has_next_page: false,
+            has_prev_page: false,
+          },
+        });
+      }
+
+      if (url.pathname === "/v1/pages/page-1") {
+        return Response.json({
+          data: {
+            id: "page-1",
+            title: "Pricing",
+            slug: "pricing",
+            content: [],
+            translations: [],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected request: ${url}`);
+    },
+  });
+
+  const page = await client.page.getBySlug("pricing");
+
+  assert.equal(page.id, "page-1");
+  assert.equal(page.slug, "pricing");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].pathname, "/v1/pages");
+  assert.equal(calls[0].searchParams.get("slug"), "pricing");
+  assert.equal(calls[0].searchParams.get("page"), "1");
+  assert.equal(calls[0].searchParams.get("limit"), "100");
+  assert.equal(calls[1].pathname, "/v1/pages/page-1");
+});
+
+test("members.get paginates list responses until the member is found", async () => {
+  const calls = [];
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async (input) => {
+      const url = new URL(String(input));
+      calls.push(url);
+
+      const page = Number(url.searchParams.get("page"));
+
+      return Response.json({
+        data:
+          page === 1
+            ? [
+                {
+                  id: "member-1",
+                  user_id: "user-1",
+                  role: "editor",
+                  name: "Editor One",
+                  email: "editor-1@example.com",
+                  image_url: null,
+                  created_at: null,
+                },
+              ]
+            : [
+                {
+                  id: "member-2",
+                  user_id: "user-2",
+                  role: "editor",
+                  name: "Editor Two",
+                  email: "editor-2@example.com",
+                  image_url: null,
+                  created_at: null,
+                },
+              ],
+        meta: {
+          page,
+          limit: 100,
+          total_items: 2,
+          total_pages: 2,
+          has_next_page: page === 1,
+          has_prev_page: page > 1,
+        },
+      });
+    },
+  });
+
+  const member = await client.members.get("member-2");
+
+  assert.equal(member.id, "member-2");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].pathname, "/v1/members");
+  assert.equal(calls[0].searchParams.get("page"), "1");
+  assert.equal(calls[0].searchParams.get("limit"), "100");
+  assert.equal(calls[1].searchParams.get("page"), "2");
+});
+
+test("locales.get returns a locale from the locale list", async () => {
+  let calls = 0;
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async () => {
+      calls += 1;
+
+      return Response.json({
+        data: [
+          {
+            id: "locale-en",
+            code: "en",
+            name: "English",
+          },
+          {
+            id: "locale-pl",
+            code: "pl",
+            name: "Polski",
+          },
+        ],
+      });
+    },
+  });
+
+  const locale = await client.locales.get("pl");
+
+  assert.equal(locale.id, "locale-pl");
+  assert.equal(locale.code, "pl");
+  assert.equal(calls, 1);
+});
+
+test("SDK lookup helpers return ParagraphApiError when the resource is missing", async () => {
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async () =>
+      Response.json({
+        data: [],
+        meta: {
+          page: 1,
+          limit: 100,
+          total_items: 0,
+          total_pages: 0,
+          has_next_page: false,
+          has_prev_page: false,
+        },
+      }),
+  });
+
+  await assert.rejects(
+    () => client.members.get("missing-member"),
+    (error) => {
+      assert.equal(error instanceof ParagraphApiError, true);
+      assert.equal(error.status, 404);
+      assert.equal(error.code, "member_not_found");
+      assert.deepEqual(error.details, { memberId: "missing-member" });
+      assert.equal(
+        error.request.url,
+        "https://api.paragraphcms.com/v1/members?page=1&limit=100",
+      );
+      return true;
+    },
+  );
+
+  await assert.rejects(
+    () => client.pages.getBySlug("missing-page"),
+    (error) => {
+      assert.equal(error instanceof ParagraphApiError, true);
+      assert.equal(error.status, 404);
+      assert.equal(error.code, "page_not_found");
+      assert.deepEqual(error.details, { slug: "missing-page" });
+      assert.equal(
+        error.request.url,
+        "https://api.paragraphcms.com/v1/pages?slug=missing-page&page=1&limit=100",
+      );
+      return true;
+    },
+  );
+});
+
 test("Client rate-limits request starts per instance", async () => {
   const starts = [];
   const client = new Client({
@@ -170,4 +361,34 @@ test("Client rate-limits request starts per instance", async () => {
   assert.equal(starts.length, 3);
   assert.equal(starts[1] - starts[0] >= 150, true);
   assert.equal(starts[2] - starts[1] >= 150, true);
+});
+
+test("Client binds the global fetch implementation to globalThis", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async function (input, init) {
+    assert.equal(this, globalThis);
+    assert.equal(String(input), "https://api.paragraphcms.com/v1");
+    assert.equal(init.method, "GET");
+
+    return Response.json({
+      data: {
+        version: "v1",
+        openapi_url: "/v1/openapi.json",
+        authentication: {
+          type: "api_key",
+          supported_headers: ["x-api-key", "authorization"],
+          authorization_format: "Bearer <api-key>",
+        },
+        resources: [],
+      },
+    });
+  };
+
+  try {
+    const client = new Client({ apiKey: "test-key" });
+    await client.getInfo();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

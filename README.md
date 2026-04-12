@@ -199,12 +199,14 @@ Returns the public `/v1` info payload:
 client.pages.list(query?, options?)
 client.pages.create(body?, options?)
 client.pages.get(pageId, query?, options?)
+client.pages.getBySlug(slug, options?)
 client.pages.update(pageId, body, options?)
 client.pages.delete(pageId, options?)
 client.pages.restore(pageId, options?)
 client.pages.permanentlyDelete(pageId, options?)
 client.pages.duplicate(pageId, options?)
 client.pages.createTranslation(pageId, body, options?)
+client.page.getBySlug(slug, options?)
 ```
 
 Supported `sort` fields for `pages.list()`:
@@ -220,6 +222,8 @@ Notes:
 - `label_id` is passed as `string[]` in the SDK and serialized to the API CSV format automatically.
 - `content` is present in page list results only when `include_content: true`.
 - Page responses should be treated as Tiptap JSON arrays. `content_format` is no longer required in the response shape.
+- `pages.getBySlug()` is an SDK convenience lookup built on top of `pages.list({ slug })`, and then fetches the full page details by ID.
+- `page.getBySlug()` is a short alias for the same lookup.
 
 ### Collections
 
@@ -291,8 +295,11 @@ await client.media.upload({
 
 ```ts
 client.members.list(query?, options?)
+client.members.get(memberId, options?)
 client.authors.list(query?, options?)
+client.authors.get(authorId, options?)
 client.reviewers.list(query?, options?)
+client.reviewers.get(reviewerId, options?)
 ```
 
 Supported `sort` fields:
@@ -301,7 +308,10 @@ Supported `sort` fields:
 - `email`
 - `created_at`
 
-`authors` and `reviewers` are aliases of the member listing endpoints exposed by the API.
+Notes:
+
+- `members.get()`, `authors.get()`, and `reviewers.get()` are SDK convenience lookups built on top of the paginated list endpoints because the HTTP API does not expose `/members/{id}`, `/authors/{id}`, or `/reviewers/{id}` endpoints.
+- `authors` and `reviewers` are aliases of the member listing endpoints exposed by the API.
 
 ### Statuses
 
@@ -358,9 +368,12 @@ Supported `sort` fields for `dataModels.list()`:
 
 ```ts
 client.locales.list(options?)
+client.locales.get(code, options?)
 client.locales.create(body, options?)
 client.locales.delete(code, options?)
 ```
+
+`locales.get()` is an SDK convenience lookup over `locales.list()` because the HTTP API exposes locale listing and deletion by code, but not a dedicated locale detail endpoint.
 
 ### AI
 

@@ -77,6 +77,25 @@ type DataEnvelope<T> = {
 
 const DEFAULT_BASE_URL = "https://api.paragraphcms.com/v1";
 const DEFAULT_REQUESTS_PER_SECOND = 5;
+const LOOKUP_PAGE_SIZE = 100;
+
+function resolveFetchImplementation(
+  customFetch: FetchLike | undefined,
+) {
+  const fetchImpl = customFetch ?? globalThis.fetch;
+
+  if (typeof fetchImpl !== "function") {
+    throw new ParagraphClientError(
+      "No fetch implementation available. Pass `fetch` in the client options.",
+    );
+  }
+
+  if (fetchImpl === globalThis.fetch) {
+    return globalThis.fetch.bind(globalThis) as FetchLike;
+  }
+
+  return fetchImpl;
+}
 
 function normalizeBaseUrl(baseUrl: string) {
   const trimmed = baseUrl.trim().replace(/\/+$/, "");
@@ -376,6 +395,8 @@ export class Client {
         query,
         options,
       }),
+    getBySlug: (slug: string, options?: RequestOptions) =>
+      this.getPageBySlug(slug, options),
     update: (
       pageId: string,
       body: UpdatePageRequest,
@@ -429,6 +450,11 @@ export class Client {
           options,
         },
       ),
+  };
+
+  readonly page = {
+    getBySlug: (slug: string, options?: RequestOptions) =>
+      this.pages.getBySlug(slug, options),
   };
 
   readonly collections = {
@@ -524,6 +550,17 @@ export class Client {
         query,
         options,
       }),
+    get: (memberId: string, options?: RequestOptions) =>
+      this.findListItem<Member>(
+        "/members",
+        (member) => member.id === memberId,
+        options,
+        {
+          code: "member_not_found",
+          message: "Member not found.",
+          details: { memberId },
+        },
+      ),
   };
 
   readonly authors = {
@@ -532,6 +569,17 @@ export class Client {
         query,
         options,
       }),
+    get: (authorId: string, options?: RequestOptions) =>
+      this.findListItem<Member>(
+        "/authors",
+        (author) => author.id === authorId,
+        options,
+        {
+          code: "author_not_found",
+          message: "Author not found.",
+          details: { authorId },
+        },
+      ),
   };
 
   readonly reviewers = {
@@ -540,6 +588,17 @@ export class Client {
         query,
         options,
       }),
+    get: (reviewerId: string, options?: RequestOptions) =>
+      this.findListItem<Member>(
+        "/reviewers",
+        (reviewer) => reviewer.id === reviewerId,
+        options,
+        {
+          code: "reviewer_not_found",
+          message: "Reviewer not found.",
+          details: { reviewerId },
+        },
+      ),
   };
 
   readonly statuses = {
@@ -694,6 +753,17 @@ export class Client {
       this.requestData<Locale[]>("GET", "/locales", {
         options,
       }),
+    get: (code: string, options?: RequestOptions) =>
+      this.findArrayItem<Locale>(
+        "/locales",
+        (locale) => locale.code === code,
+        options,
+        {
+          code: "locale_not_found",
+          message: "Locale not found.",
+          details: { code },
+        },
+      ),
     create: (
       body: CreateLocaleRequest,
       options?: RequestOptions,
@@ -752,19 +822,11 @@ export class Client {
       throw new ParagraphClientError("`apiKey` is required.");
     }
 
-    const fetchImpl = options.fetch ?? globalThis.fetch;
-
-    if (typeof fetchImpl !== "function") {
-      throw new ParagraphClientError(
-        "No fetch implementation available. Pass `fetch` in the client options.",
-      );
-    }
-
     this.apiKey = options.apiKey.trim();
     this.baseUrl = normalizeBaseUrl(
       options.baseUrl ?? DEFAULT_BASE_URL,
     );
-    this.fetchImpl = fetchImpl;
+    this.fetchImpl = resolveFetchImplementation(options.fetch);
     this.defaultHeaders = new Headers(options.headers);
     this.timeoutMs = options.timeoutMs;
     this.limiter = new RequestRateLimiter(
@@ -800,6 +862,122 @@ export class Client {
     },
   ) {
     return this.requestJson<ListResponse<T>>(method, path, config);
+  }
+
+  private async getPageBySlug(
+    slug: string,
+    options?: RequestOptions,
+  ) {
+    const page = await this.findListItem<PageSummary>(
+      "/pages",
+      (item) => item.slug === slug,
+      options,
+      {
+        code: "page_not_found",
+        message: "Page not found.",
+        details: { slug },
+      },
+      {
+        slug,
+      },
+    );
+
+    return this.pages.get(page.id, undefined, options);
+  }
+
+  private async findListItem<T>(
+    path: string,
+    predicate: (item: T) => boolean,
+    options: RequestOptions | undefined,
+    error: {
+      code: string;
+      message: string;
+      details?: unknown;
+    },
+    query?: object,
+  ) {
+    let page = 1;
+
+    while (true) {
+      const response = await this.requestList<T>("GET", path, {
+        query: {
+          ...(query ?? {}),
+          page,
+          limit: LOOKUP_PAGE_SIZE,
+        },
+        options,
+      });
+      const match = response.data.find(predicate);
+
+      if (match) {
+        return match;
+      }
+
+      if (!response.meta.has_next_page) {
+        break;
+      }
+
+      page += 1;
+    }
+
+    throw this.createLookupError("GET", path, {
+      query: {
+        ...(query ?? {}),
+        page,
+        limit: LOOKUP_PAGE_SIZE,
+      },
+      code: error.code,
+      message: error.message,
+      details: error.details,
+    });
+  }
+
+  private async findArrayItem<T>(
+    path: string,
+    predicate: (item: T) => boolean,
+    options: RequestOptions | undefined,
+    error: {
+      code: string;
+      message: string;
+      details?: unknown;
+    },
+  ) {
+    const items = await this.requestData<T[]>("GET", path, {
+      options,
+    });
+    const match = items.find(predicate);
+
+    if (match) {
+      return match;
+    }
+
+    throw this.createLookupError("GET", path, {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+    });
+  }
+
+  private createLookupError(
+    method: HttpMethod,
+    path: string,
+    config: {
+      query?: object;
+      code: string;
+      message: string;
+      details?: unknown;
+    },
+  ) {
+    return new ParagraphApiError({
+      status: 404,
+      code: config.code,
+      message: config.message,
+      details: config.details,
+      request: createRequestDescriptor(
+        method,
+        buildUrl(this.baseUrl, path, config.query),
+      ),
+    });
   }
 
   private requestJson<T>(
@@ -858,7 +1036,9 @@ export class Client {
       );
 
       try {
-        const response = await this.fetchImpl(url, {
+        const fetchImpl = this.fetchImpl;
+
+        const response = await fetchImpl(url, {
           method,
           headers,
           body,

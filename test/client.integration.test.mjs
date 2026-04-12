@@ -330,6 +330,12 @@ test(
       const fetched = await client.pages.get(pageId);
       assertPage(fetched);
 
+      const fetchedBySlug = await client.page.getBySlug(
+        `${prefix}-page`,
+      );
+      assertPage(fetchedBySlug);
+      assert.equal(fetchedBySlug.id, pageId);
+
       const updated = await client.pages.update(pageId, {
         title: `${prefix} page updated`,
         content: [
