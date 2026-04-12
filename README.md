@@ -28,25 +28,11 @@ const client = new Client({
   apiKey: process.env.PARAGRAPH_API_KEY!,
 });
 
-const pages = await client.pages.list({
-  limit: 20,
-  include_content: false,
-  sort: "-updated_at",
-});
-
-const created = await client.pages.create({
-  title: "Pricing",
-  language: "en",
-  content: [
-    {
-      type: "paragraph",
-      content: [{ type: "text", text: "Pricing" }],
-    },
-  ],
-});
+const pages = await client.pages.list();
+const page = await client.pages.getBySlug("pricing");
 
 console.log(pages.meta.total_items);
-console.log(created.page.id);
+console.log(page.id);
 ```
 
 ## Runtime Notes
@@ -219,8 +205,9 @@ Supported `sort` fields for `pages.list()`:
 
 Notes:
 
+- If you omit both `limit` and `page`, `pages.list()` returns the full matching result set.
 - `label_id` is passed as `string[]` in the SDK and serialized to the API CSV format automatically.
-- `content` is present in page list results only when `include_content: true`.
+- `pages.list()` sends `include_content: false` by default. Set `include_content: true` to include `content` in list results.
 - Page responses should be treated as Tiptap JSON arrays. `content_format` is no longer required in the response shape.
 - `pages.getBySlug()` is an SDK convenience lookup built on top of `pages.list({ slug })`, and then fetches the full page details by ID.
 - `page.getBySlug()` is a short alias for the same lookup.

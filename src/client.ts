@@ -374,10 +374,7 @@ export class Client {
 
   readonly pages = {
     list: (query?: PageListQuery, options?: RequestOptions) =>
-      this.requestList<PageSummary>("GET", "/pages", {
-        query,
-        options,
-      }),
+      this.listPages(query, options),
     create: (
       body: CreatePageRequest = {},
       options?: RequestOptions,
@@ -838,6 +835,63 @@ export class Client {
     return this.requestData<ApiInfo>("GET", "", { options });
   }
 
+  private async listPages(
+    query?: PageListQuery,
+    options?: RequestOptions,
+  ) {
+    const pageListQuery = this.createPageListQuery(query);
+    const response = await this.requestList<PageSummary>("GET", "/pages", {
+      query: pageListQuery,
+      options,
+    });
+
+    if (
+      pageListQuery.limit !== undefined ||
+      pageListQuery.page !== undefined ||
+      !response.meta.has_next_page
+    ) {
+      return response;
+    }
+
+    const items = [...response.data];
+    let nextPage = response.meta.page + 1;
+    let lastMeta = response.meta;
+
+    while (lastMeta.has_next_page) {
+      const nextResponse = await this.requestList<PageSummary>("GET", "/pages", {
+        query: {
+          ...pageListQuery,
+          page: nextPage,
+          limit: lastMeta.limit,
+        },
+        options,
+      });
+
+      items.push(...nextResponse.data);
+      lastMeta = nextResponse.meta;
+      nextPage = lastMeta.page + 1;
+    }
+
+    return {
+      data: items,
+      meta: {
+        page: 1,
+        limit: items.length,
+        total_items: items.length,
+        total_pages: items.length > 0 ? 1 : 0,
+        has_next_page: false,
+        has_prev_page: false,
+      },
+    };
+  }
+
+  private createPageListQuery(query?: PageListQuery): PageListQuery {
+    return {
+      ...(query ?? {}),
+      include_content: query?.include_content ?? false,
+    };
+  }
+
   private requestData<T>(
     method: HttpMethod,
     path: string,
@@ -868,6 +922,7 @@ export class Client {
     slug: string,
     options?: RequestOptions,
   ) {
+    const query = this.createPageListQuery({ slug });
     const page = await this.findListItem<PageSummary>(
       "/pages",
       (item) => item.slug === slug,
@@ -877,9 +932,7 @@ export class Client {
         message: "Page not found.",
         details: { slug },
       },
-      {
-        slug,
-      },
+      query,
     );
 
     return this.pages.get(page.id, undefined, options);

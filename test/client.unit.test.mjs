@@ -51,9 +51,61 @@ test("Client normalizes baseUrl and serializes query arrays", async () => {
   assert.equal(url.searchParams.get("label_id"), "label-a,label-b");
   assert.equal(url.searchParams.get("deleted"), "include");
   assert.equal(url.searchParams.get("published"), "false");
+  assert.equal(url.searchParams.get("page"), null);
+  assert.equal(url.searchParams.get("limit"), null);
   assert.equal(init.method, "GET");
   assert.equal(init.headers.get("x-api-key"), "test-key");
   assert.equal(init.headers.get("accept"), "application/json");
+});
+
+test("pages.list without explicit pagination aggregates every API page", async () => {
+  const calls = [];
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async (input) => {
+      const url = new URL(String(input));
+      calls.push(url);
+
+      const page = Number(url.searchParams.get("page") ?? "1");
+
+      return Response.json({
+        data:
+          page === 1
+            ? [
+                { id: "page-1", title: "Page 1", slug: "page-1" },
+                { id: "page-2", title: "Page 2", slug: "page-2" },
+              ]
+            : [{ id: "page-3", title: "Page 3", slug: "page-3" }],
+        meta: {
+          page,
+          limit: 2,
+          total_items: 3,
+          total_pages: 2,
+          has_next_page: page === 1,
+          has_prev_page: page > 1,
+        },
+      });
+    },
+  });
+
+  const listed = await client.pages.list({ deleted: "include" });
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].searchParams.get("include_content"), "false");
+  assert.equal(calls[0].searchParams.get("deleted"), "include");
+  assert.equal(calls[0].searchParams.get("page"), null);
+  assert.equal(calls[0].searchParams.get("limit"), null);
+  assert.equal(calls[1].searchParams.get("include_content"), "false");
+  assert.equal(calls[1].searchParams.get("deleted"), "include");
+  assert.equal(calls[1].searchParams.get("page"), "2");
+  assert.equal(calls[1].searchParams.get("limit"), "2");
+  assert.equal(listed.data.length, 3);
+  assert.equal(listed.meta.page, 1);
+  assert.equal(listed.meta.limit, 3);
+  assert.equal(listed.meta.total_items, 3);
+  assert.equal(listed.meta.total_pages, 1);
+  assert.equal(listed.meta.has_next_page, false);
+  assert.equal(listed.meta.has_prev_page, false);
 });
 
 test("media.upload builds multipart form data for binary buffers", async () => {
@@ -188,6 +240,7 @@ test("page.getBySlug resolves the page through slug lookup and returns full deta
   assert.equal(page.slug, "pricing");
   assert.equal(calls.length, 2);
   assert.equal(calls[0].pathname, "/v1/pages");
+  assert.equal(calls[0].searchParams.get("include_content"), "false");
   assert.equal(calls[0].searchParams.get("slug"), "pricing");
   assert.equal(calls[0].searchParams.get("page"), "1");
   assert.equal(calls[0].searchParams.get("limit"), "100");
@@ -323,7 +376,7 @@ test("SDK lookup helpers return ParagraphApiError when the resource is missing",
       assert.deepEqual(error.details, { slug: "missing-page" });
       assert.equal(
         error.request.url,
-        "https://api.paragraphcms.com/v1/pages?slug=missing-page&page=1&limit=100",
+        "https://api.paragraphcms.com/v1/pages?slug=missing-page&include_content=false&page=1&limit=100",
       );
       return true;
     },
