@@ -1,0 +1,41 @@
+{
+  "name": "@paragraphcms/client",
+  "version": "1.0.0",
+  "description": "Official Paragraph CMS TypeScript client for the Paragraph CMS v1 API.",
+  "license": "ISC",
+  "author": "Paragraph CMS",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/client.unit.test.mjs test/client.integration.test.mjs",
+    "test:unit": "npm run build && node --test test/client.unit.test.mjs",
+    "test:integration": "npm run build && node --test test/client.integration.test.mjs"
+  },
+  "keywords": [
+    "paragraphcms",
+    "cms",
+    "api",
+    "sdk",
+    "typescript"
+  ],
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
