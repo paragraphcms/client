@@ -72,6 +72,7 @@ export interface RequestOptions {
   signal?: AbortSignal;
   headers?: HeadersInit;
   timeoutMs?: number;
+  maxRateLimitRetries?: number;
 }
 
 export interface ClientOptions {
@@ -81,6 +82,7 @@ export interface ClientOptions {
   headers?: HeadersInit;
   timeoutMs?: number;
   maxRequestsPerSecond?: number;
+  maxRateLimitRetries?: number;
 }
 
 export interface ListQuery {
@@ -339,6 +341,7 @@ export interface ReorderResult {
 
 export interface PageListQuery extends ListQuery {
   include_content?: boolean;
+  collection?: string;
   deleted?: DeletedFilter;
   collection_id?: string;
   without_collection?: boolean;

@@ -1,25 +1,22 @@
-# Paragraph CMS Client
+# @paragraphcms/client
 
 Official TypeScript client for the Paragraph CMS v1 API.
 
-The package is built on top of the standard Fetch API, so it works in modern Node.js, Cloudflare Workers, Next.js route handlers/server actions, AWS Lambda, and other server-side JavaScript runtimes that expose `fetch`, `Headers`, `FormData`, `Blob`, and `AbortController`.
+`@paragraphcms/client` is a small, typed SDK built on top of the standard Fetch API. It runs in modern Node.js and server-side runtimes that expose `fetch`, `Headers`, `FormData`, `Blob`, and `AbortController`, including Cloudflare Workers, Next.js route handlers and server actions, AWS Lambda, and similar environments.
 
-## Features
+## Quick Start
 
-- Full coverage for the current Paragraph CMS v1 API surface.
-- `new Client({ apiKey })` entrypoint with a small, typed SDK.
-- Built-in request queue that rate-limits each client instance to `5 req/s` by default.
-- Runtime-agnostic implementation with no runtime dependencies.
-- First-class TypeScript types for request payloads, responses, list metadata, and API errors.
-- Request cancellation with `AbortSignal`.
-
-## Installation
+Install the client with a package manager:
 
 ```bash
 npm install @paragraphcms/client
+
+# Alternative package managers
+pnpm add @paragraphcms/client
+yarn add @paragraphcms/client
 ```
 
-## Quick Start
+Create a client instance and call the API:
 
 ```ts
 import { Client } from "@paragraphcms/client";
@@ -35,31 +32,70 @@ console.log(pages.meta.total_items);
 console.log(page.id);
 ```
 
-## Runtime Notes
+## Table of Contents
 
-- The default API base URL is `https://api.paragraphcms.com/v1`.
-- If you pass `baseUrl: "https://api.paragraphcms.com"`, the client automatically normalizes it to `https://api.paragraphcms.com/v1`.
-- The client uses `x-api-key` authentication by default.
-- Field names in request and response payloads intentionally mirror the HTTP API. That means body/query keys stay in `snake_case`.
+- [Requirements](#requirements)
+- [Features](#features)
+- [Creating a Client Instance](#creating-a-client-instance)
+- [Configuration](#configuration)
+- [Per-request Options](#per-request-options)
+- [Error Handling](#error-handling)
+- [Rate Limiting](#rate-limiting)
+- [Return Shapes](#return-shapes)
+- [API](#api)
+- [End-to-end Examples](#end-to-end-examples)
+- [Exported Types](#exported-types)
+- [Testing](#testing)
+- [License](#license)
 
-## Rate Limiting
+## Requirements
 
-Paragraph CMS v1 is rate-limited to `5 req/s`. Each `Client` instance contains an internal queue that spaces request starts so the instance does not exceed that budget by default.
+- Node.js `18+` for direct Node.js usage.
+- A runtime with standard Fetch API primitives for edge and serverless usage.
+- ESM support. The package is published as an ES module.
 
-Important details:
+## Features
 
-- The limiter is per client instance, not global across all containers, lambdas, or workers.
-- If your app creates many `Client` instances, each instance will maintain its own queue.
-- The safest pattern is to reuse one shared `Client` instance per process or isolate when possible.
+- Full coverage for the current Paragraph CMS v1 API surface.
+- `new Client({ apiKey })` entrypoint with a compact, typed SDK.
+- Built-in request queue that rate-limits each client instance to `5 req/s` by default.
+- Automatic retries for `429 Too Many Requests` responses using `Retry-After` when available.
+- Runtime-agnostic implementation with no runtime dependencies.
+- First-class TypeScript types for payloads, list metadata, domain models, and API errors.
+- Request cancellation with `AbortSignal`.
 
-You can override the per-instance limit if you need a lower ceiling:
+## Creating a Client Instance
+
+`const client = new Client(options)`
+
+Initialize the client with your Paragraph API key and optional runtime settings:
+
+```ts
+import { Client, type ClientOptions } from "@paragraphcms/client";
+
+const config: ClientOptions = {
+  apiKey: process.env.PARAGRAPH_API_KEY!,
+  timeoutMs: 10_000,
+};
+
+export const client = new Client(config);
+```
+
+To target a local or staging API, pass `baseUrl` explicitly:
 
 ```ts
 const client = new Client({
   apiKey: process.env.PARAGRAPH_API_KEY!,
-  maxRequestsPerSecond: 3,
+  baseUrl: "http://localhost:3001",
 });
 ```
+
+Important runtime notes:
+
+- The default API base URL is `https://api.paragraphcms.com/v1`.
+- If you pass `baseUrl: "https://api.paragraphcms.com"` or another origin without `/v1`, the client normalizes it to the `/v1` API root automatically.
+- The client authenticates requests with the `x-api-key` header.
+- Request and response field names intentionally mirror the HTTP API, so payload keys remain in `snake_case`.
 
 ## Configuration
 
@@ -82,7 +118,7 @@ Required. Paragraph CMS organization API key.
 
 Optional. Defaults to `https://api.paragraphcms.com/v1`.
 
-Examples:
+Accepted examples:
 
 - `https://api.paragraphcms.com/v1`
 - `https://api.paragraphcms.com`
@@ -94,29 +130,34 @@ Optional custom fetch implementation. Useful in tests or custom runtimes.
 
 ### `headers`
 
-Optional default headers added to every request.
+Optional default headers merged into every request.
 
 ### `timeoutMs`
 
-Optional default request timeout in milliseconds. Per-call options can override it.
+Optional default request timeout in milliseconds. Per-request options can override it.
 
 ### `maxRequestsPerSecond`
 
 Optional per-client limiter ceiling. Defaults to `5`.
 
-## Per-Request Options
+### `maxRateLimitRetries`
 
-Every SDK method accepts an optional last argument:
+Optional maximum number of automatic retries after a `429 Too Many Requests` response. Defaults to `2`. Set to `0` to disable retries.
+
+## Per-request Options
+
+Every SDK method accepts an optional final `RequestOptions` argument:
 
 ```ts
 type RequestOptions = {
   signal?: AbortSignal;
   headers?: HeadersInit;
   timeoutMs?: number;
+  maxRateLimitRetries?: number;
 };
 ```
 
-Example:
+For methods that also accept a body or query object, pass request options as the last argument:
 
 ```ts
 const controller = new AbortController();
@@ -129,10 +170,14 @@ const page = await client.pages.get("page-id", undefined, {
 
 ## Error Handling
 
-The client throws `ParagraphApiError` for non-2xx API responses and `ParagraphClientError` for local runtime/configuration problems.
+The client throws `ParagraphApiError` for non-2xx API responses and `ParagraphClientError` for local runtime, timeout, or configuration problems.
 
 ```ts
-import { Client, ParagraphApiError } from "@paragraphcms/client";
+import {
+  Client,
+  ParagraphApiError,
+  ParagraphClientError,
+} from "@paragraphcms/client";
 
 const client = new Client({
   apiKey: process.env.PARAGRAPH_API_KEY!,
@@ -147,21 +192,48 @@ try {
     console.error(error.message);
     console.error(error.details);
   }
+
+  if (error instanceof ParagraphClientError) {
+    console.error(error.message);
+  }
 }
+```
+
+## Rate Limiting
+
+Paragraph CMS v1 is rate-limited to `5 req/s`. Each `Client` instance includes an internal queue that spaces request starts so the instance stays within that budget by default.
+
+Important details:
+
+- The limiter is per client instance, not global across containers, lambdas, or workers.
+- If your application creates many `Client` instances, each instance keeps its own queue.
+- The safest production pattern is to reuse one shared `Client` instance per process or isolate when possible.
+- If the API still returns `429 Too Many Requests`, the client retries automatically up to `maxRateLimitRetries` times and honors the `Retry-After` header when it is present.
+- Request timeouts include retry wait time and all retry attempts, not just the first fetch.
+
+You can lower the per-instance ceiling if needed:
+
+```ts
+const client = new Client({
+  apiKey: process.env.PARAGRAPH_API_KEY!,
+  maxRequestsPerSecond: 3,
+});
 ```
 
 ## Return Shapes
 
 - Single-resource endpoints return the unwrapped `data` payload.
 - Paginated endpoints return `{ data, meta }`.
-- `locales.list()` returns a plain `Locale[]` because the API endpoint itself is not paginated.
+- `locales.list()` returns a plain `Locale[]` because the underlying API endpoint is not paginated.
 
-## API Surface
+## API
+
+The SDK closely mirrors the Paragraph CMS HTTP API. Resource names stay familiar and request/response bodies are intentionally left in `snake_case` to match the wire format.
 
 ### Root
 
 ```ts
-client.getInfo()
+client.getInfo(options?)
 ```
 
 Returns the public `/v1` info payload:
@@ -175,11 +247,13 @@ Returns the public `/v1` info payload:
     supported_headers: ["x-api-key", "authorization"],
     authorization_format: "Bearer <api-key>",
   },
-  resources: [...]
+  resources: [...],
 }
 ```
 
 ### Pages
+
+Page listing, detail, mutation, duplication, restore, and translation helpers:
 
 ```ts
 client.pages.list(query?, options?)
@@ -192,6 +266,7 @@ client.pages.restore(pageId, options?)
 client.pages.permanentlyDelete(pageId, options?)
 client.pages.duplicate(pageId, options?)
 client.pages.createTranslation(pageId, body, options?)
+client.page.get(pageId, query?, options?)
 client.page.getBySlug(slug, options?)
 ```
 
@@ -206,10 +281,12 @@ Supported `sort` fields for `pages.list()`:
 Notes:
 
 - If you omit both `limit` and `page`, `pages.list()` returns the full matching result set.
+- `collection` is a convenience alias for `collection_id` in `pages.list()` queries.
 - `label_id` is passed as `string[]` in the SDK and serialized to the API CSV format automatically.
-- `pages.list()` sends `include_content: false` by default. Set `include_content: true` to include `content` in list results.
+- `pages.list()` sends `include_content: false` by default. Set `include_content: true` to include `content` in list responses.
 - Page responses should be treated as Tiptap JSON arrays. `content_format` is no longer required in the response shape.
-- `pages.getBySlug()` is an SDK convenience lookup built on top of `pages.list({ slug })`, and then fetches the full page details by ID.
+- `page.get()` is a short alias for `pages.get()`.
+- `pages.getBySlug()` is an SDK convenience lookup built on top of `pages.list({ slug })`, then fetches the full page details by ID.
 - `page.getBySlug()` is a short alias for the same lookup.
 
 ### Collections
@@ -250,7 +327,7 @@ Supported `sort` fields for `media.list()`:
 - `File`
 - `Blob`
 - `ArrayBuffer`
-- Typed arrays like `Uint8Array`
+- Typed arrays such as `Uint8Array`
 - Node.js `Buffer`
 
 Example:
@@ -297,8 +374,8 @@ Supported `sort` fields:
 
 Notes:
 
-- `members.get()`, `authors.get()`, and `reviewers.get()` are SDK convenience lookups built on top of the paginated list endpoints because the HTTP API does not expose `/members/{id}`, `/authors/{id}`, or `/reviewers/{id}` endpoints.
-- `authors` and `reviewers` are aliases of the member listing endpoints exposed by the API.
+- `members.get()`, `authors.get()`, and `reviewers.get()` are SDK convenience lookups built on top of paginated list endpoints because the HTTP API does not expose `/members/{id}`, `/authors/{id}`, or `/reviewers/{id}` detail endpoints.
+- `authors` and `reviewers` are aliases of member listing endpoints exposed by the API.
 
 ### Statuses
 
@@ -370,9 +447,9 @@ client.ai.generateMetaDescription(body, options?)
 client.ai.generateContent(body, options?)
 ```
 
-## End-to-End Examples
+## End-to-end Examples
 
-### Create a page and upload its hero image
+### Create a Page and Upload Its Hero Image
 
 ```ts
 const pageResult = await client.pages.create({
@@ -395,7 +472,7 @@ await client.media.upload({
 });
 ```
 
-### Create a translated page variant
+### Create a Translated Page Variant
 
 ```ts
 await client.pages.createTranslation("page-id", {
@@ -405,7 +482,7 @@ await client.pages.createTranslation("page-id", {
 });
 ```
 
-### Generate SEO fields with AI
+### Generate SEO Fields with AI
 
 ```ts
 const generatedMeta = await client.ai.generateMetaDescription({
@@ -419,7 +496,7 @@ console.log(generatedMeta.meta_description);
 
 ## Exported Types
 
-The package exports the `Client` class, both error classes, and the main request/response/domain types used by the SDK, including:
+The package exports `Client`, `ParagraphApiError`, `ParagraphClientError`, and the main request, response, and domain types used by the SDK, including:
 
 - `ClientOptions`
 - `RequestOptions`
@@ -457,16 +534,11 @@ npm run test:integration
 
 Environment variables for integration tests:
 
-- `PARAGRAPH_API_KEY` required to run live API tests.
-- `PARAGRAPH_API_BASE_URL` optional override for local/staging API targets.
-- `PARAGRAPH_AI_MODEL` optional model id for AI endpoint tests. When omitted, AI integration tests are skipped.
+- `PARAGRAPH_API_KEY` is required to run live API tests.
+- `PARAGRAPH_API_BASE_URL` optionally overrides the API target for local or staging environments.
+- `PARAGRAPH_AI_MODEL` optionally sets the model used by AI endpoint tests. If omitted, AI integration tests are skipped.
 
 The integration suite is self-contained and generates its own resources, so it does not rely on any existing content in the target organization.
-
-## Requirements
-
-- Node.js `18+` for direct Node usage.
-- A runtime with standard Fetch API primitives for edge/serverless usage.
 
 ## License
 

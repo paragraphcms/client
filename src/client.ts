@@ -77,6 +77,8 @@ type DataEnvelope<T> = {
 
 const DEFAULT_BASE_URL = "https://api.paragraphcms.com/v1";
 const DEFAULT_REQUESTS_PER_SECOND = 5;
+const DEFAULT_RATE_LIMIT_RETRIES = 2;
+const DEFAULT_RATE_LIMIT_RETRY_DELAY_MS = 1000;
 const LOOKUP_PAGE_SIZE = 100;
 
 function resolveFetchImplementation(
@@ -250,9 +252,102 @@ function createRequestSignal(
   };
 }
 
+function waitForDelay(
+  delayMs: number,
+  signal?: AbortSignal,
+) {
+  if (delayMs <= 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    let timeoutId: number | undefined;
+
+    const cleanup = () => {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+
+      if (signal) {
+        signal.removeEventListener("abort", onAbort);
+      }
+    };
+
+    const onAbort = () => {
+      cleanup();
+      reject(
+        signal?.reason ??
+          new DOMException("The operation was aborted.", "AbortError"),
+      );
+    };
+
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    timeoutId = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, delayMs);
+  });
+}
+
 function isAbortError(error: unknown) {
   return (
     error instanceof DOMException && error.name === "AbortError"
+  );
+}
+
+function resolveMaxRateLimitRetries(
+  value: number | undefined,
+  fallback = DEFAULT_RATE_LIMIT_RETRIES,
+) {
+  const resolved = value ?? fallback;
+
+  if (
+    !Number.isInteger(resolved) ||
+    resolved < 0
+  ) {
+    throw new ParagraphClientError(
+      "`maxRateLimitRetries` must be a non-negative integer.",
+    );
+  }
+
+  return resolved;
+}
+
+function parseRetryAfterMs(headerValue: string | null) {
+  if (!headerValue) {
+    return undefined;
+  }
+
+  const seconds = Number(headerValue);
+
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.ceil(seconds * 1000);
+  }
+
+  const retryAt = Date.parse(headerValue);
+
+  if (Number.isNaN(retryAt)) {
+    return undefined;
+  }
+
+  return Math.max(0, retryAt - Date.now());
+}
+
+function resolveRateLimitRetryDelayMs(
+  headers: Headers,
+  retryCount: number,
+) {
+  return (
+    parseRetryAfterMs(headers.get("retry-after")) ??
+    DEFAULT_RATE_LIMIT_RETRY_DELAY_MS * 2 ** retryCount
   );
 }
 
@@ -370,6 +465,7 @@ export class Client {
   private readonly fetchImpl: FetchLike;
   private readonly defaultHeaders: Headers;
   private readonly timeoutMs?: number;
+  private readonly maxRateLimitRetries: number;
   private readonly limiter: RequestRateLimiter;
 
   readonly pages = {
@@ -450,6 +546,11 @@ export class Client {
   };
 
   readonly page = {
+    get: (
+      pageId: string,
+      query?: GetPageQuery,
+      options?: RequestOptions,
+    ) => this.pages.get(pageId, query, options),
     getBySlug: (slug: string, options?: RequestOptions) =>
       this.pages.getBySlug(slug, options),
   };
@@ -826,6 +927,9 @@ export class Client {
     this.fetchImpl = resolveFetchImplementation(options.fetch);
     this.defaultHeaders = new Headers(options.headers);
     this.timeoutMs = options.timeoutMs;
+    this.maxRateLimitRetries = resolveMaxRateLimitRetries(
+      options.maxRateLimitRetries,
+    );
     this.limiter = new RequestRateLimiter(
       options.maxRequestsPerSecond ?? DEFAULT_REQUESTS_PER_SECOND,
     );
@@ -886,8 +990,23 @@ export class Client {
   }
 
   private createPageListQuery(query?: PageListQuery): PageListQuery {
+    const collection =
+      query?.collection_id ?? query?.collection;
+
+    if (
+      query?.collection !== undefined &&
+      query?.collection_id !== undefined &&
+      query.collection !== query.collection_id
+    ) {
+      throw new ParagraphClientError(
+        "`collection` and `collection_id` must match when both are provided.",
+      );
+    }
+
     return {
       ...(query ?? {}),
+      collection: undefined,
+      collection_id: collection,
       include_content: query?.include_content ?? false,
     };
   }
@@ -1045,86 +1164,113 @@ export class Client {
   ) {
     const url = buildUrl(this.baseUrl, path, config?.query);
     const request = createRequestDescriptor(method, url);
+    const headers = new Headers(this.defaultHeaders);
+    const timeoutMs =
+      config?.options?.timeoutMs ?? this.timeoutMs;
+    const maxRateLimitRetries = resolveMaxRateLimitRetries(
+      config?.options?.maxRateLimitRetries,
+      this.maxRateLimitRetries,
+    );
 
-    return this.limiter.schedule(async () => {
-      const headers = new Headers(this.defaultHeaders);
-      const timeoutMs =
-        config?.options?.timeoutMs ?? this.timeoutMs;
+    headers.set("accept", "application/json");
 
-      headers.set("accept", "application/json");
+    if (
+      !headers.has("x-api-key") &&
+      !headers.has("authorization")
+    ) {
+      headers.set("x-api-key", this.apiKey);
+    }
 
-      if (
-        !headers.has("x-api-key") &&
-        !headers.has("authorization")
-      ) {
-        headers.set("x-api-key", this.apiKey);
+    let body: BodyInit | undefined;
+
+    if (config?.formData) {
+      headers.delete("content-type");
+      body = config.formData;
+    } else if (config?.body !== undefined) {
+      if (!headers.has("content-type")) {
+        headers.set("content-type", "application/json");
       }
 
-      let body: BodyInit | undefined;
+      body = JSON.stringify(config.body);
+    }
 
-      if (config?.formData) {
-        headers.delete("content-type");
-        body = config.formData;
-      } else if (config?.body !== undefined) {
-        if (!headers.has("content-type")) {
-          headers.set("content-type", "application/json");
-        }
+    const optionHeaders = new Headers(config?.options?.headers);
 
-        body = JSON.stringify(config.body);
-      }
+    for (const [key, value] of optionHeaders.entries()) {
+      headers.set(key, value);
+    }
 
-      const optionHeaders = new Headers(config?.options?.headers);
+    if (config?.formData) {
+      headers.delete("content-type");
+    }
 
-      for (const [key, value] of optionHeaders.entries()) {
-        headers.set(key, value);
-      }
+    const requestSignal = createRequestSignal(
+      config?.options?.signal,
+      timeoutMs,
+    );
 
-      if (config?.formData) {
-        headers.delete("content-type");
-      }
-
-      const requestSignal = createRequestSignal(
-        config?.options?.signal,
-        timeoutMs,
-      );
+    return (async () => {
+      let retryCount = 0;
 
       try {
         const fetchImpl = this.fetchImpl;
 
-        const response = await fetchImpl(url, {
-          method,
-          headers,
-          body,
-          signal: requestSignal.signal,
-        });
-        const payload = await parseResponse(response);
+        while (true) {
+          const response = await this.limiter.schedule(() =>
+            fetchImpl(url, {
+              method,
+              headers,
+              body,
+              signal: requestSignal.signal,
+            }),
+          );
+          const payload = await parseResponse(response);
 
-        if (!response.ok) {
-          if (isApiErrorPayload(payload)) {
-            throw new ParagraphApiError({
-              status: response.status,
-              code: payload.error.code,
-              message: payload.error.message,
-              details: payload.error.details,
-              headers: new Headers(response.headers),
-              request,
-              body: payload,
-            });
+          if (response.ok) {
+            return payload as T;
           }
 
-          throw new ParagraphApiError({
-            status: response.status,
-            code: response.status === 401 ? "unauthorized" : "request_failed",
-            message:
-              typeof payload === "string" && payload.length > 0
-                ? payload
-                : response.statusText || "Request failed.",
-            headers: new Headers(response.headers),
-            request,
-          });
-        }
+          const responseHeaders = new Headers(response.headers);
+          const apiError = isApiErrorPayload(payload)
+            ? new ParagraphApiError({
+                status: response.status,
+                code: payload.error.code,
+                message: payload.error.message,
+                details: payload.error.details,
+                headers: responseHeaders,
+                request,
+                body: payload,
+              })
+            : new ParagraphApiError({
+                status: response.status,
+                code:
+                  response.status === 401
+                    ? "unauthorized"
+                    : "request_failed",
+                message:
+                  typeof payload === "string" && payload.length > 0
+                    ? payload
+                    : response.statusText || "Request failed.",
+                headers: responseHeaders,
+                request,
+              });
 
-        return payload as T;
+          if (
+            response.status === 429 &&
+            retryCount < maxRateLimitRetries
+          ) {
+            const retryDelayMs = resolveRateLimitRetryDelayMs(
+              responseHeaders,
+              retryCount,
+            );
+
+            retryCount += 1;
+            await waitForDelay(retryDelayMs, requestSignal.signal);
+            continue;
+          }
+
+          throw apiError;
+        }
       } catch (error) {
         if (
           error instanceof ParagraphApiError ||
@@ -1143,7 +1289,10 @@ export class Client {
           );
         }
 
-        if (isAbortError(error)) {
+        if (
+          isAbortError(error) ||
+          config?.options?.signal?.aborted
+        ) {
           throw error;
         }
 
@@ -1154,6 +1303,6 @@ export class Client {
       } finally {
         requestSignal.cleanup();
       }
-    });
+    })();
   }
 }

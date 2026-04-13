@@ -58,6 +58,63 @@ test("Client normalizes baseUrl and serializes query arrays", async () => {
   assert.equal(init.headers.get("accept"), "application/json");
 });
 
+test("pages.list maps collection alias to collection_id", async () => {
+  const calls = [];
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async (input) => {
+      const url = new URL(String(input));
+      calls.push(url);
+
+      return Response.json({
+        data: [],
+        meta: {
+          page: 1,
+          limit: 20,
+          total_items: 0,
+          total_pages: 0,
+          has_next_page: false,
+          has_prev_page: false,
+        },
+      });
+    },
+  });
+
+  await client.pages.list({ collection: "collection-123" });
+
+  assert.equal(calls.length, 1);
+  assert.equal(
+    calls[0].searchParams.get("collection_id"),
+    "collection-123",
+  );
+  assert.equal(calls[0].searchParams.get("collection"), null);
+});
+
+test("pages.list rejects conflicting collection aliases", async () => {
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async () => {
+      throw new Error("Request should not be sent");
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      client.pages.list({
+        collection: "collection-a",
+        collection_id: "collection-b",
+      }),
+    (error) => {
+      assert.equal(error instanceof ParagraphClientError, true);
+      assert.equal(
+        error.message,
+        "`collection` and `collection_id` must match when both are provided.",
+      );
+      return true;
+    },
+  );
+});
+
 test("pages.list without explicit pagination aggregates every API page", async () => {
   const calls = [];
   const client = new Client({
@@ -191,6 +248,93 @@ test("Client converts API errors into ParagraphApiError", async () => {
   );
 });
 
+test("Client retries 429 responses using Retry-After", async () => {
+  let calls = 0;
+  const client = new Client({
+    apiKey: "test-key",
+    maxRateLimitRetries: 0,
+    fetch: async () => {
+      calls += 1;
+
+      if (calls === 1) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: "rate_limited",
+              message: "Too many requests.",
+            },
+          }),
+          {
+            status: 429,
+            headers: {
+              "content-type": "application/json",
+              "retry-after": "0",
+            },
+          },
+        );
+      }
+
+      return Response.json({
+        data: {
+          version: "v1",
+          openapi_url: "/v1/openapi.json",
+          authentication: {
+            type: "api_key",
+            supported_headers: ["x-api-key", "authorization"],
+            authorization_format: "Bearer <api-key>",
+          },
+          resources: [],
+        },
+      });
+    },
+  });
+
+  const info = await client.getInfo({
+    maxRateLimitRetries: 1,
+  });
+
+  assert.equal(info.version, "v1");
+  assert.equal(calls, 2);
+});
+
+test("Client stops retrying 429 responses after maxRateLimitRetries", async () => {
+  let calls = 0;
+  const client = new Client({
+    apiKey: "test-key",
+    maxRateLimitRetries: 1,
+    fetch: async () => {
+      calls += 1;
+
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: "rate_limited",
+            message: "Too many requests.",
+          },
+        }),
+        {
+          status: 429,
+          headers: {
+            "content-type": "application/json",
+            "retry-after": "0",
+          },
+        },
+      );
+    },
+  });
+
+  await assert.rejects(
+    () => client.getInfo(),
+    (error) => {
+      assert.equal(error instanceof ParagraphApiError, true);
+      assert.equal(error.status, 429);
+      assert.equal(error.code, "rate_limited");
+      assert.equal(calls, 2);
+      return true;
+    },
+  );
+});
+
 test("page.getBySlug resolves the page through slug lookup and returns full details", async () => {
   const calls = [];
   const client = new Client({
@@ -245,6 +389,37 @@ test("page.getBySlug resolves the page through slug lookup and returns full deta
   assert.equal(calls[0].searchParams.get("page"), "1");
   assert.equal(calls[0].searchParams.get("limit"), "100");
   assert.equal(calls[1].pathname, "/v1/pages/page-1");
+});
+
+test("page.get is a short alias for pages.get", async () => {
+  const calls = [];
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async (input) => {
+      const url = new URL(String(input));
+      calls.push(url);
+
+      if (url.pathname === "/v1/pages/page-1") {
+        return Response.json({
+          data: {
+            id: "page-1",
+            title: "Pricing",
+            slug: "pricing",
+            content: [],
+            translations: [],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected request: ${url}`);
+    },
+  });
+
+  const page = await client.page.get("page-1");
+
+  assert.equal(page.id, "page-1");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].pathname, "/v1/pages/page-1");
 });
 
 test("members.get paginates list responses until the member is found", async () => {
