@@ -2,7 +2,7 @@
   "name": "@paragraphcms/client",
   "version": "1.6.0",
   "description": "Official Paragraph CMS TypeScript client for the Paragraph CMS v1 API.",
-  "license": "ISC",
+  "license": "MIT",
   "author": "Paragraph CMS",
   "type": "module",
   "main": "./dist/index.js",
