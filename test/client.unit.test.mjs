@@ -14,11 +14,10 @@ test("Client requires an API key", () => {
   );
 });
 
-test("Client normalizes baseUrl and serializes query arrays", async () => {
+test("Client uses the official API endpoint and serializes query arrays", async () => {
   const calls = [];
   const client = new Client({
     apiKey: "test-key",
-    baseUrl: "https://api.paragraphcms.com",
     fetch: async (input, init) => {
       calls.push({ input, init });
       return Response.json({
@@ -36,8 +35,8 @@ test("Client normalizes baseUrl and serializes query arrays", async () => {
   });
 
   await client.pages.list({
-    include_content: true,
-    label_id: ["label-a", "label-b"],
+    includeContent: true,
+    labelIds: ["label-a", "label-b"],
     deleted: "include",
     published: false,
   });
@@ -58,7 +57,34 @@ test("Client normalizes baseUrl and serializes query arrays", async () => {
   assert.equal(init.headers.get("accept"), "application/json");
 });
 
-test("pages.list maps collection alias to collection_id", async () => {
+test("Client rejects baseUrl and apiUrl overrides", () => {
+  assert.throws(
+    () =>
+      new Client({
+        apiKey: "test-key",
+        baseUrl: "https://example.com",
+      }),
+    (error) => {
+      assert.equal(error instanceof ParagraphClientError, true);
+      assert.equal(
+        error.message,
+        "`baseUrl` and `apiUrl` are not supported. The client always uses the official Paragraph CMS API endpoint.",
+      );
+      return true;
+    },
+  );
+
+  assert.throws(
+    () =>
+      new Client({
+        apiKey: "test-key",
+        apiUrl: "https://example.com",
+      }),
+    ParagraphClientError,
+  );
+});
+
+test("pages.list maps collectionId to collection_id", async () => {
   const calls = [];
   const client = new Client({
     apiKey: "test-key",
@@ -80,38 +106,12 @@ test("pages.list maps collection alias to collection_id", async () => {
     },
   });
 
-  await client.pages.list({ collection: "collection-123" });
+  await client.pages.list({ collectionId: "collection-123" });
 
   assert.equal(calls.length, 1);
   assert.equal(
     calls[0].searchParams.get("collection_id"),
     "collection-123",
-  );
-  assert.equal(calls[0].searchParams.get("collection"), null);
-});
-
-test("pages.list rejects conflicting collection aliases", async () => {
-  const client = new Client({
-    apiKey: "test-key",
-    fetch: async () => {
-      throw new Error("Request should not be sent");
-    },
-  });
-
-  await assert.rejects(
-    () =>
-      client.pages.list({
-        collection: "collection-a",
-        collection_id: "collection-b",
-      }),
-    (error) => {
-      assert.equal(error instanceof ParagraphClientError, true);
-      assert.equal(
-        error.message,
-        "`collection` and `collection_id` must match when both are provided.",
-      );
-      return true;
-    },
   );
 });
 
@@ -159,10 +159,10 @@ test("pages.list without explicit pagination aggregates every API page", async (
   assert.equal(listed.data.length, 3);
   assert.equal(listed.meta.page, 1);
   assert.equal(listed.meta.limit, 3);
-  assert.equal(listed.meta.total_items, 3);
-  assert.equal(listed.meta.total_pages, 1);
-  assert.equal(listed.meta.has_next_page, false);
-  assert.equal(listed.meta.has_prev_page, false);
+  assert.equal(listed.meta.totalItems, 3);
+  assert.equal(listed.meta.totalPages, 1);
+  assert.equal(listed.meta.hasNextPage, false);
+  assert.equal(listed.meta.hasPrevPage, false);
 });
 
 test("media.upload builds multipart form data for binary buffers", async () => {
@@ -195,9 +195,9 @@ test("media.upload builds multipart form data for binary buffers", async () => {
 
   await client.media.upload({
     file: Buffer.from([1, 2, 3]),
-    file_name: "hero.png",
-    content_type: "image/png",
-    page_id: "page-id",
+    fileName: "hero.png",
+    contentType: "image/png",
+    pageId: "page-id",
     alt: "Hero",
   });
 
@@ -294,6 +294,7 @@ test("Client retries 429 responses using Retry-After", async () => {
   });
 
   assert.equal(info.version, "v1");
+  assert.equal(info.openapiUrl, "/v1/openapi.json");
   assert.equal(calls, 2);
 });
 
@@ -472,6 +473,7 @@ test("members.get paginates list responses until the member is found", async () 
   const member = await client.members.get("member-2");
 
   assert.equal(member.id, "member-2");
+  assert.equal(member.userId, "user-2");
   assert.equal(calls.length, 2);
   assert.equal(calls[0].pathname, "/v1/members");
   assert.equal(calls[0].searchParams.get("page"), "1");

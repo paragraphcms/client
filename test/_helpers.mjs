@@ -22,10 +22,10 @@ export function assertPaginationMeta(meta) {
   assert.equal(typeof meta, "object");
   assert.equal(typeof meta.page, "number");
   assert.equal(typeof meta.limit, "number");
-  assert.equal(typeof meta.total_items, "number");
-  assert.equal(typeof meta.total_pages, "number");
-  assert.equal(typeof meta.has_next_page, "boolean");
-  assert.equal(typeof meta.has_prev_page, "boolean");
+  assert.equal(typeof meta.totalItems, "number");
+  assert.equal(typeof meta.totalPages, "number");
+  assert.equal(typeof meta.hasNextPage, "boolean");
+  assert.equal(typeof meta.hasPrevPage, "boolean");
 }
 
 export function assertListResponse(list, itemAssert) {
@@ -39,12 +39,12 @@ export function assertListResponse(list, itemAssert) {
 
 export function assertMember(member) {
   assert.equal(typeof member.id, "string");
-  assert.equal(typeof member.user_id, "string");
+  assert.equal(typeof member.userId, "string");
   assert.equal(typeof member.role, "string");
   assertNullableString(member.name);
   assertNullableString(member.email);
-  assertNullableString(member.image_url);
-  assertNullableString(member.created_at);
+  assertNullableString(member.imageUrl);
+  assertNullableString(member.createdAt);
 }
 
 export function assertStatus(status) {
@@ -54,8 +54,8 @@ export function assertStatus(status) {
   assert.equal(typeof status.type, "string");
   assertNullableString(status.description);
   assert.equal(typeof status.order, "number");
-  assertNullableString(status.created_at);
-  assertNullableString(status.updated_at);
+  assertNullableString(status.createdAt);
+  assertNullableString(status.updatedAt);
 }
 
 export function assertLabel(label) {
@@ -64,8 +64,8 @@ export function assertLabel(label) {
   assert.equal(typeof label.color, "string");
   assertNullableString(label.description);
   assert.equal(typeof label.order, "number");
-  assertNullableString(label.created_at);
-  assertNullableString(label.last_applied_at);
+  assertNullableString(label.createdAt);
+  assertNullableString(label.lastAppliedAt);
 }
 
 export function assertDataModelField(field) {
@@ -82,21 +82,21 @@ export function assertDataModel(dataModel) {
   for (const field of dataModel.fields) {
     assertDataModelField(field);
   }
-  assertNullableString(dataModel.created_at);
-  assertNullableString(dataModel.updated_at);
+  assertNullableString(dataModel.createdAt);
+  assertNullableString(dataModel.updatedAt);
 }
 
 export function assertCollection(collection) {
   assert.equal(typeof collection.id, "string");
   assert.equal(typeof collection.name, "string");
   assertNullableString(collection.description);
-  assertNullableString(collection.default_data_model_id);
-  assert.equal(Array.isArray(collection.team_ids), true);
-  assert.equal(typeof collection.page_count, "number");
-  assertNullableString(collection.last_modified_at);
+  assertNullableString(collection.defaultDataModelId);
+  assert.equal(Array.isArray(collection.teamIds), true);
+  assert.equal(typeof collection.pageCount, "number");
+  assertNullableString(collection.lastModifiedAt);
 
-  if (collection.default_data_model !== null) {
-    assertDataModel(collection.default_data_model);
+  if (collection.defaultDataModel !== null) {
+    assertDataModel(collection.defaultDataModel);
   }
 }
 
@@ -106,28 +106,28 @@ export function assertPageSummary(page, { expectContent = false } = {}) {
   assertNullableString(page.slug);
   assert.equal(typeof page.language, "string");
   assert.equal(
-    page.content_format === undefined || page.content_format === "tiptap",
+    page.contentFormat === undefined || page.contentFormat === "tiptap",
     true,
   );
-  assertNullableString(page.hero_url);
-  assertNullableString(page.collection_id);
+  assertNullableString(page.heroUrl);
+  assertNullableString(page.collectionId);
   if (page.collection !== null) {
     assertCollection(page.collection);
   }
-  assert.equal(typeof page.translation_group_id, "string");
-  assertNullableString(page.data_model_id);
-  if (page.data_model !== null) {
-    assertDataModel(page.data_model);
+  assert.equal(typeof page.translationGroupId, "string");
+  assertNullableString(page.dataModelId);
+  if (page.dataModel !== null) {
+    assertDataModel(page.dataModel);
   }
-  assertNullableString(page.status_id);
+  assertNullableString(page.statusId);
   if (page.status !== null) {
     assertStatus(page.status);
   }
-  assertNullableString(page.author_id);
+  assertNullableString(page.authorId);
   if (page.author !== null) {
     assertMember(page.author);
   }
-  assertNullableString(page.reviewer_id);
+  assertNullableString(page.reviewerId);
   if (page.reviewer !== null) {
     assertMember(page.reviewer);
   }
@@ -136,12 +136,12 @@ export function assertPageSummary(page, { expectContent = false } = {}) {
     assertLabel(label);
   }
   assert.equal(typeof page.fields, "object");
-  assertNullableString(page.meta_name);
-  assertNullableString(page.meta_description);
-  assertNullableString(page.published_at);
-  assertNullableString(page.deleted_at);
-  assertNullableString(page.created_at);
-  assertNullableString(page.updated_at);
+  assertNullableString(page.metaName);
+  assertNullableString(page.metaDescription);
+  assertNullableString(page.publishedAt);
+  assertNullableString(page.deletedAt);
+  assertNullableString(page.createdAt);
+  assertNullableString(page.updatedAt);
 
   if (expectContent) {
     assertPageContent(page.content);
@@ -155,41 +155,41 @@ export function assertPage(page) {
     assert.equal(typeof translation.id, "string");
     assert.equal(typeof translation.title, "string");
     assert.equal(typeof translation.language, "string");
-    assertNullableString(translation.deleted_at);
-    assertNullableString(translation.created_at);
-    assertNullableString(translation.updated_at);
-    assert.equal(typeof translation.is_current, "boolean");
+    assertNullableString(translation.deletedAt);
+    assertNullableString(translation.createdAt);
+    assertNullableString(translation.updatedAt);
+    assert.equal(typeof translation.isCurrent, "boolean");
   }
 }
 
 export function assertMedia(media) {
   assert.equal(typeof media.id, "string");
-  assertNullableString(media.page_id);
-  assert.equal(typeof media.file_name, "string");
+  assertNullableString(media.pageId);
+  assert.equal(typeof media.fileName, "string");
   assertNullableString(media.alt);
-  assert.equal(typeof media.mime_type, "string");
+  assert.equal(typeof media.mimeType, "string");
   assert.equal(typeof media.size, "number");
   assertNullableNumber(media.width);
   assertNullableNumber(media.height);
   assert.equal(typeof media.url, "string");
-  assertNullableString(media.created_at);
-  assertNullableString(media.updated_at);
+  assertNullableString(media.createdAt);
+  assertNullableString(media.updatedAt);
 }
 
 export function assertMediaDetail(media) {
   assertMedia(media);
-  assert.equal(typeof media.reference_page_count, "number");
-  assertNullableString(media.last_modified_at);
-  assert.equal(Array.isArray(media.reference_pages), true);
+  assert.equal(typeof media.referencePageCount, "number");
+  assertNullableString(media.lastModifiedAt);
+  assert.equal(Array.isArray(media.referencePages), true);
 
-  for (const page of media.reference_pages) {
+  for (const page of media.referencePages) {
     assert.equal(typeof page.id, "string");
     assert.equal(typeof page.title, "string");
     assertNullableString(page.slug);
     assertNullableString(page.language);
-    assertNullableString(page.translation_group_id);
-    assertNullableString(page.updated_at);
-    assert.equal(typeof page.is_unassigned, "boolean");
+    assertNullableString(page.translationGroupId);
+    assertNullableString(page.updatedAt);
+    assert.equal(typeof page.isUnassigned, "boolean");
   }
 }
 
@@ -201,7 +201,7 @@ export function assertLocale(locale) {
 
 export function assertApiInfo(info) {
   assert.equal(info.version, "v1");
-  assert.equal(typeof info.openapi_url, "string");
+  assert.equal(typeof info.openapiUrl, "string");
   assert.equal(typeof info.authentication, "object");
   assert.equal(Array.isArray(info.resources), true);
 }

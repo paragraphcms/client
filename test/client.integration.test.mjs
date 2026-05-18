@@ -21,7 +21,6 @@ import {
 } from "./_helpers.mjs";
 
 const apiKey = process.env.PARAGRAPH_API_KEY;
-const baseUrl = process.env.PARAGRAPH_API_BASE_URL;
 const aiModel = process.env.PARAGRAPH_AI_MODEL;
 
 test(
@@ -36,7 +35,6 @@ test(
   async (t) => {
     const client = new Client({
       apiKey,
-      ...(baseUrl ? { baseUrl } : {}),
     });
 
     const prefix = makePrefix();
@@ -132,7 +130,7 @@ test(
 
       const reordered = await client.statuses.reorder({
         type: "draft",
-        status_ids: [second.status.id, first.status.id],
+        statusIds: [second.status.id, first.status.id],
       });
 
       assert.equal(reordered.reordered, true);
@@ -177,7 +175,7 @@ test(
       assert.equal(updated.label.name, `${prefix}-label-a-updated`);
 
       const reordered = await client.labels.reorder({
-        label_ids: [second.label.id, first.label.id],
+        labelIds: [second.label.id, first.label.id],
       });
       assert.equal(reordered.reordered, true);
 
@@ -215,11 +213,11 @@ test(
         ],
       });
 
-      created.dataModelId = createdDataModel.data_model.id;
-      assertDataModel(createdDataModel.data_model);
+      created.dataModelId = createdDataModel.dataModel.id;
+      assertDataModel(createdDataModel.dataModel);
 
       const updatedDataModel = await client.dataModels.update(
-        createdDataModel.data_model.id,
+        createdDataModel.dataModel.id,
         {
           description: "updated integration test data model",
           fields: [
@@ -232,7 +230,7 @@ test(
         },
       );
       assert.equal(
-        updatedDataModel.data_model.description,
+        updatedDataModel.dataModel.description,
         "updated integration test data model",
       );
 
@@ -245,8 +243,8 @@ test(
       const createdCollection = await client.collections.create({
         name: `${prefix}-collection`,
         description: "integration test collection",
-        default_data_model_id: createdDataModel.data_model.id,
-        team_ids: [`${prefix}-team`],
+        defaultDataModelId: createdDataModel.dataModel.id,
+        teamIds: [`${prefix}-team`],
       });
 
       created.collectionId = createdCollection.collection.id;
@@ -288,9 +286,9 @@ test(
       const pageResult = await client.pages.create({
         title: `${prefix} page`,
         language: "en",
-        collection_id: created.collectionId,
-        data_model_id: created.dataModelId,
-        label_ids: created.labelIds,
+        collectionId: created.collectionId,
+        dataModelId: created.dataModelId,
+        labelIds: created.labelIds,
         content: [
           {
             type: "paragraph",
@@ -306,8 +304,8 @@ test(
           [`${prefix}-field-text`]: "hello",
         },
         slug: `${prefix}-page`,
-        meta_name: `${prefix} meta`,
-        meta_description: `${prefix} description`,
+        metaName: `${prefix} meta`,
+        metaDescription: `${prefix} description`,
       });
 
       const pageId = pageResult.page.id;
@@ -316,8 +314,8 @@ test(
 
       const listed = await client.pages.list({
         q: prefix,
-        include_content: true,
-        label_id: created.labelIds,
+        includeContent: true,
+        labelIds: created.labelIds,
         slug: `${prefix}-page`,
         limit: 10,
       });
@@ -349,7 +347,7 @@ test(
             ],
           },
         ],
-        meta_name: `${prefix} meta updated`,
+        metaName: `${prefix} meta updated`,
       });
 
       assert.equal(updated.page.title, `${prefix} page updated`);
@@ -370,18 +368,18 @@ test(
 
       const upload = await client.media.upload({
         file: makeTinyPngBytes(),
-        file_name: `${prefix}.png`,
-        content_type: "image/png",
-        page_id: pageId,
+        fileName: `${prefix}.png`,
+        contentType: "image/png",
+        pageId: pageId,
         alt: `${prefix} image`,
       });
 
       created.mediaId = upload.media.id;
       assertMedia(upload.media);
-      assert.equal(typeof upload.editor_node, "object");
+      assert.equal(typeof upload.editorNode, "object");
 
       const mediaList = await client.media.list({
-        page_id: pageId,
+        pageId: pageId,
         limit: 10,
       });
       assertListResponse(mediaList, assertMedia);
@@ -391,10 +389,10 @@ test(
       assertMediaDetail(mediaDetail);
 
       const mediaUpdated = await client.media.update(upload.media.id, {
-        file_name: `${prefix}-updated.png`,
+        fileName: `${prefix}-updated.png`,
         alt: `${prefix} image updated`,
       });
-      assert.equal(mediaUpdated.media.file_name, `${prefix}-updated.png`);
+      assert.equal(mediaUpdated.media.fileName, `${prefix}-updated.png`);
       assert.equal(mediaUpdated.media.alt, `${prefix} image updated`);
 
       const mediaDeleted = await client.media.delete(upload.media.id);
@@ -405,10 +403,10 @@ test(
       assert.equal(deleted.deleted, true);
 
       const deletedPage = await client.pages.get(pageId, {
-        include_deleted: true,
+        includeDeleted: true,
       });
       assertPage(deletedPage);
-      assert.notEqual(deletedPage.deleted_at, null);
+      assert.notEqual(deletedPage.deletedAt, null);
 
       const restored = await client.pages.restore(pageId);
       assert.equal(restored.restored, true);
@@ -418,7 +416,7 @@ test(
       assert.equal(deletedAgain.deleted, true);
 
       const permanentlyDeleted = await client.pages.permanentlyDelete(pageId);
-      assert.equal(permanentlyDeleted.permanently_deleted, true);
+      assert.equal(permanentlyDeleted.permanentlyDeleted, true);
       created.pageIds = created.pageIds.filter((id) => id !== pageId);
     });
 
@@ -432,16 +430,16 @@ test(
         title: `${prefix} article`,
         content: [],
       });
-      assert.equal(typeof metaName.meta_name, "string");
-      assert.equal(metaName.meta_name.length > 0, true);
+      assert.equal(typeof metaName.metaName, "string");
+      assert.equal(metaName.metaName.length > 0, true);
 
       const metaDescription = await client.ai.generateMetaDescription({
         model: aiModel,
         title: `${prefix} article`,
         content: [],
       });
-      assert.equal(typeof metaDescription.meta_description, "string");
-      assert.equal(metaDescription.meta_description.length > 0, true);
+      assert.equal(typeof metaDescription.metaDescription, "string");
+      assert.equal(metaDescription.metaDescription.length > 0, true);
 
       const content = await client.ai.generateContent({
         model: aiModel,

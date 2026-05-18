@@ -70,16 +70,28 @@ type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 type QueryPrimitive = string | number | boolean;
 
 type FetchLike = typeof globalThis.fetch;
+type PlainObject = Record<string, unknown>;
 
 type DataEnvelope<T> = {
   data: T;
 };
 
-const DEFAULT_BASE_URL = "https://api.paragraphcms.com/v1";
+const API_BASE_URL = "https://api.paragraphcms.com/v1";
 const DEFAULT_REQUESTS_PER_SECOND = 5;
 const DEFAULT_RATE_LIMIT_RETRIES = 2;
 const DEFAULT_RATE_LIMIT_RETRY_DELAY_MS = 1000;
 const LOOKUP_PAGE_SIZE = 100;
+const PRESERVED_TRANSFORM_KEYS = new Set([
+  "content",
+  "editorNode",
+  "fields",
+]);
+const SPECIAL_API_KEY_MAP: Record<string, string> = {
+  labelIds: "label_id",
+};
+const SPECIAL_SDK_KEY_MAP: Record<string, string> = {
+  label_id: "labelIds",
+};
 
 function resolveFetchImplementation(
   customFetch: FetchLike | undefined,
@@ -99,36 +111,90 @@ function resolveFetchImplementation(
   return fetchImpl;
 }
 
-function normalizeBaseUrl(baseUrl: string) {
-  const trimmed = baseUrl.trim().replace(/\/+$/, "");
-
-  if (!trimmed) {
-    throw new ParagraphClientError("`baseUrl` cannot be empty.");
+function isPlainObject(value: unknown): value is PlainObject {
+  if (typeof value !== "object" || value === null) {
+    return false;
   }
 
-  const url = new URL(trimmed);
-  const normalizedPath = url.pathname.replace(/\/+$/, "");
+  const prototype = Object.getPrototypeOf(value);
 
-  if (normalizedPath === "" || normalizedPath === "/") {
-    url.pathname = "/v1";
-  } else {
-    url.pathname = normalizedPath;
+  return prototype === Object.prototype || prototype === null;
+}
+
+function toCamelCaseKey(key: string) {
+  const mappedKey = SPECIAL_SDK_KEY_MAP[key];
+
+  if (mappedKey) {
+    return mappedKey;
   }
 
-  return url.toString().replace(/\/+$/, "");
+  return key.replace(/_([a-z])/g, (_match, letter: string) =>
+    letter.toUpperCase(),
+  );
+}
+
+function toSnakeCaseKey(key: string) {
+  const mappedKey = SPECIAL_API_KEY_MAP[key];
+
+  if (mappedKey) {
+    return mappedKey;
+  }
+
+  return key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
+
+function transformKeysDeep(
+  value: unknown,
+  transformKey: (key: string) => string,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => transformKeysDeep(item, transformKey));
+  }
+
+  if (!isPlainObject(value)) {
+    return value;
+  }
+
+  const transformed: Record<string, unknown> = {};
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    const transformedKey = transformKey(key);
+
+    if (PRESERVED_TRANSFORM_KEYS.has(transformedKey)) {
+      transformed[transformedKey] = nestedValue;
+      continue;
+    }
+
+    transformed[transformedKey] = transformKeysDeep(
+      nestedValue,
+      transformKey,
+    );
+  }
+
+  return transformed;
+}
+
+function toApiPayload<T>(value: T) {
+  return transformKeysDeep(value, toSnakeCaseKey) as T;
+}
+
+function toSdkPayload<T>(value: T) {
+  return transformKeysDeep(value, toCamelCaseKey) as T;
 }
 
 function buildUrl(
-  baseUrl: string,
   path: string,
   query?: object,
 ) {
   const normalizedPath = path ? `/${path.replace(/^\/+/, "")}` : "";
-  const url = new URL(`${baseUrl}${normalizedPath}`);
+  const url = new URL(`${API_BASE_URL}${normalizedPath}`);
+  const apiQuery = query
+    ? (toApiPayload(query) as Record<string, unknown>)
+    : undefined;
 
-  if (query) {
+  if (apiQuery) {
     for (const [key, rawValue] of Object.entries(
-      query as Record<string, unknown>,
+      apiQuery,
     )) {
       if (rawValue === undefined || rawValue === null) {
         continue;
@@ -391,12 +457,12 @@ function toBlobPart(file: UploadMediaRequest["file"]) {
 function buildUploadFilePart(input: UploadMediaRequest) {
   const source = toBlobPart(input.file);
   const fileName =
-    input.file_name ??
+    input.fileName ??
     (typeof File !== "undefined" && input.file instanceof File
       ? input.file.name
       : "upload.bin");
   const contentType =
-    input.content_type ??
+    input.contentType ??
     ("type" in source.value &&
     typeof source.value.type === "string" &&
     source.value.type.length > 0
@@ -450,7 +516,7 @@ function createUploadFormData(input: UploadMediaRequest) {
     formData.append("file", filePart.value);
   }
 
-  formData.append("page_id", input.page_id);
+  formData.append("page_id", input.pageId);
 
   if (input.alt !== undefined && input.alt !== null) {
     formData.append("alt", input.alt);
@@ -461,7 +527,6 @@ function createUploadFormData(input: UploadMediaRequest) {
 
 export class Client {
   private readonly apiKey: string;
-  private readonly baseUrl: string;
   private readonly fetchImpl: FetchLike;
   private readonly defaultHeaders: Headers;
   private readonly timeoutMs?: number;
@@ -916,14 +981,23 @@ export class Client {
   };
 
   constructor(options: ClientOptions) {
-    if (!options.apiKey.trim()) {
+    if (
+      "baseUrl" in (options as ClientOptions & { baseUrl?: unknown }) ||
+      "apiUrl" in (options as ClientOptions & { apiUrl?: unknown })
+    ) {
+      throw new ParagraphClientError(
+        "`baseUrl` and `apiUrl` are not supported. The client always uses the official Paragraph CMS API endpoint.",
+      );
+    }
+
+    if (
+      typeof options.apiKey !== "string" ||
+      !options.apiKey.trim()
+    ) {
       throw new ParagraphClientError("`apiKey` is required.");
     }
 
     this.apiKey = options.apiKey.trim();
-    this.baseUrl = normalizeBaseUrl(
-      options.baseUrl ?? DEFAULT_BASE_URL,
-    );
     this.fetchImpl = resolveFetchImplementation(options.fetch);
     this.defaultHeaders = new Headers(options.headers);
     this.timeoutMs = options.timeoutMs;
@@ -952,7 +1026,7 @@ export class Client {
     if (
       pageListQuery.limit !== undefined ||
       pageListQuery.page !== undefined ||
-      !response.meta.has_next_page
+      !response.meta.hasNextPage
     ) {
       return response;
     }
@@ -961,7 +1035,7 @@ export class Client {
     let nextPage = response.meta.page + 1;
     let lastMeta = response.meta;
 
-    while (lastMeta.has_next_page) {
+    while (lastMeta.hasNextPage) {
       const nextResponse = await this.requestList<PageSummary>("GET", "/pages", {
         query: {
           ...pageListQuery,
@@ -981,33 +1055,18 @@ export class Client {
       meta: {
         page: 1,
         limit: items.length,
-        total_items: items.length,
-        total_pages: items.length > 0 ? 1 : 0,
-        has_next_page: false,
-        has_prev_page: false,
+        totalItems: items.length,
+        totalPages: items.length > 0 ? 1 : 0,
+        hasNextPage: false,
+        hasPrevPage: false,
       },
     };
   }
 
   private createPageListQuery(query?: PageListQuery): PageListQuery {
-    const collection =
-      query?.collection_id ?? query?.collection;
-
-    if (
-      query?.collection !== undefined &&
-      query?.collection_id !== undefined &&
-      query.collection !== query.collection_id
-    ) {
-      throw new ParagraphClientError(
-        "`collection` and `collection_id` must match when both are provided.",
-      );
-    }
-
     return {
       ...(query ?? {}),
-      collection: undefined,
-      collection_id: collection,
-      include_content: query?.include_content ?? false,
+      includeContent: query?.includeContent ?? false,
     };
   }
 
@@ -1085,7 +1144,7 @@ export class Client {
         return match;
       }
 
-      if (!response.meta.has_next_page) {
+      if (!response.meta.hasNextPage) {
         break;
       }
 
@@ -1147,7 +1206,7 @@ export class Client {
       details: config.details,
       request: createRequestDescriptor(
         method,
-        buildUrl(this.baseUrl, path, config.query),
+        buildUrl(path, config.query),
       ),
     });
   }
@@ -1162,7 +1221,7 @@ export class Client {
       options?: RequestOptions;
     },
   ) {
-    const url = buildUrl(this.baseUrl, path, config?.query);
+    const url = buildUrl(path, config?.query);
     const request = createRequestDescriptor(method, url);
     const headers = new Headers(this.defaultHeaders);
     const timeoutMs =
@@ -1191,7 +1250,7 @@ export class Client {
         headers.set("content-type", "application/json");
       }
 
-      body = JSON.stringify(config.body);
+      body = JSON.stringify(toApiPayload(config.body));
     }
 
     const optionHeaders = new Headers(config?.options?.headers);
@@ -1227,19 +1286,19 @@ export class Client {
           const payload = await parseResponse(response);
 
           if (response.ok) {
-            return payload as T;
+            return toSdkPayload(payload) as T;
           }
 
           const responseHeaders = new Headers(response.headers);
           const apiError = isApiErrorPayload(payload)
             ? new ParagraphApiError({
+                body: toSdkPayload(payload),
                 status: response.status,
                 code: payload.error.code,
                 message: payload.error.message,
-                details: payload.error.details,
+                details: toSdkPayload(payload.error.details),
                 headers: responseHeaders,
                 request,
-                body: payload,
               })
             : new ParagraphApiError({
                 status: response.status,

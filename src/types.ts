@@ -32,10 +32,10 @@ export type Uploadable = File | Blob | ArrayBuffer | ArrayBufferView;
 export interface PaginationMeta {
   page: number;
   limit: number;
-  total_items: number;
-  total_pages: number;
-  has_next_page: boolean;
-  has_prev_page: boolean;
+  totalItems: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
 }
 
 export interface ListResponse<T> {
@@ -45,11 +45,11 @@ export interface ListResponse<T> {
 
 export interface ApiInfo {
   version: string;
-  openapi_url: string;
+  openapiUrl: string;
   authentication: {
     type: "api_key";
-    supported_headers: ["x-api-key", "authorization"];
-    authorization_format: "Bearer <api-key>";
+    supportedHeaders: ["x-api-key", "authorization"];
+    authorizationFormat: "Bearer <api-key>";
   };
   resources: string[];
 }
@@ -77,7 +77,6 @@ export interface RequestOptions {
 
 export interface ClientOptions {
   apiKey: string;
-  baseUrl?: string;
   fetch?: typeof globalThis.fetch;
   headers?: HeadersInit;
   timeoutMs?: number;
@@ -94,12 +93,12 @@ export interface ListQuery {
 
 export interface Member {
   id: string;
-  user_id: string;
+  userId: string;
   role: string;
   name: string | null;
   email: string | null;
-  image_url: string | null;
-  created_at: string | null;
+  imageUrl: string | null;
+  createdAt: string | null;
 }
 
 export interface Status {
@@ -109,8 +108,8 @@ export interface Status {
   type: StatusType;
   description: string | null;
   order: number;
-  created_at: string | null;
-  updated_at: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface Label {
@@ -119,8 +118,8 @@ export interface Label {
   color: string;
   description: string | null;
   order: number;
-  created_at: string | null;
-  last_applied_at: string | null;
+  createdAt: string | null;
+  lastAppliedAt: string | null;
 }
 
 export interface DataModelField {
@@ -139,32 +138,32 @@ export interface DataModelSummary {
 
 export interface DataModel extends DataModelSummary {
   fields: DataModelField[];
-  created_at: string | null;
-  updated_at: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface CollectionSummary {
   id: string;
   name: string;
   description: string | null;
-  default_data_model_id: string | null;
-  team_ids: string[];
-  page_count: number;
-  last_modified_at: string | null;
+  defaultDataModelId: string | null;
+  teamIds: string[];
+  pageCount: number;
+  lastModifiedAt: string | null;
 }
 
 export interface Collection extends CollectionSummary {
-  default_data_model: DataModel | null;
+  defaultDataModel: DataModel | null;
 }
 
 export interface PageTranslation {
   id: string;
   title: string;
   language: string;
-  deleted_at: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-  is_current: boolean;
+  deletedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  isCurrent: boolean;
 }
 
 export interface PageSummary {
@@ -172,28 +171,28 @@ export interface PageSummary {
   title: string;
   slug: string | null;
   language: string;
-  content_format?: PageContentFormat;
-  hero_url: string | null;
-  collection_id: string | null;
+  contentFormat?: PageContentFormat;
+  heroUrl: string | null;
+  collectionId: string | null;
   collection: Collection | null;
-  translation_group_id: string;
-  data_model_id: string | null;
-  data_model: DataModel | null;
-  status_id: string | null;
+  translationGroupId: string;
+  dataModelId: string | null;
+  dataModel: DataModel | null;
+  statusId: string | null;
   status: Status | null;
-  author_id: string | null;
+  authorId: string | null;
   author: Member | null;
-  reviewer_id: string | null;
+  reviewerId: string | null;
   reviewer: Member | null;
   labels: Label[];
   fields: Record<string, unknown>;
   content?: PageContent;
-  meta_name: string | null;
-  meta_description: string | null;
-  published_at: string | null;
-  deleted_at: string | null;
-  created_at: string | null;
-  updated_at: string | null;
+  metaName: string | null;
+  metaDescription: string | null;
+  publishedAt: string | null;
+  deletedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface Page extends PageSummary {
@@ -203,16 +202,16 @@ export interface Page extends PageSummary {
 
 export interface Media {
   id: string;
-  page_id: string | null;
-  file_name: string;
+  pageId: string | null;
+  fileName: string;
   alt: string | null;
-  mime_type: string;
+  mimeType: string;
   size: number;
   width: number | null;
   height: number | null;
   url: string;
-  created_at: string | null;
-  updated_at: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface MediaReferencePage {
@@ -220,15 +219,15 @@ export interface MediaReferencePage {
   title: string;
   slug: string | null;
   language: string | null;
-  translation_group_id: string | null;
-  updated_at: string | null;
-  is_unassigned: boolean;
+  translationGroupId: string | null;
+  updatedAt: string | null;
+  isUnassigned: boolean;
 }
 
 export interface MediaDetail extends Media {
-  reference_page_count: number;
-  last_modified_at: string | null;
-  reference_pages: MediaReferencePage[];
+  referencePageCount: number;
+  lastModifiedAt: string | null;
+  referencePages: MediaReferencePage[];
 }
 
 export interface Locale {
@@ -254,7 +253,7 @@ export interface CollectionMutationResult {
 export interface MediaUploadResult {
   message: string;
   media: Media;
-  editor_node: EditorNode;
+  editorNode: EditorNode;
 }
 
 export interface MediaMutationResult {
@@ -265,7 +264,7 @@ export interface MediaMutationResult {
 export interface MediaDeleteResult {
   id: string;
   deleted: boolean;
-  deleted_count: number;
+  deletedCount: number;
   message: string;
 }
 
@@ -281,7 +280,7 @@ export interface LabelMutationResult {
 
 export interface DataModelMutationResult {
   message: string;
-  data_model: DataModel;
+  dataModel: DataModel;
 }
 
 export interface LocaleMutationResult {
@@ -295,12 +294,12 @@ export interface LocaleMutationResult {
 
 export interface AiMetaNameResult {
   message: string;
-  meta_name: string;
+  metaName: string;
 }
 
 export interface AiMetaDescriptionResult {
   message: string;
-  meta_description: string;
+  metaDescription: string;
 }
 
 export interface AiContentResult {
@@ -330,7 +329,7 @@ export interface PageRestoreResult {
 
 export interface PermanentDeleteResult {
   id: string;
-  permanently_deleted: boolean;
+  permanentlyDeleted: boolean;
   message: string;
 }
 
@@ -340,48 +339,47 @@ export interface ReorderResult {
 }
 
 export interface PageListQuery extends ListQuery {
-  include_content?: boolean;
-  collection?: string;
+  includeContent?: boolean;
+  collectionId?: string;
   deleted?: DeletedFilter;
-  collection_id?: string;
-  without_collection?: boolean;
-  data_model_id?: string;
-  status_id?: string;
-  status_type?: StatusType;
-  author_id?: string;
-  reviewer_id?: string;
+  withoutCollection?: boolean;
+  dataModelId?: string;
+  statusId?: string;
+  statusType?: StatusType;
+  authorId?: string;
+  reviewerId?: string;
   language?: string;
-  translation_group_id?: string;
+  translationGroupId?: string;
   slug?: string;
-  label_id?: string[];
-  updated_after?: string;
-  updated_before?: string;
-  published_after?: string;
-  published_before?: string;
+  labelIds?: string[];
+  updatedAfter?: string;
+  updatedBefore?: string;
+  publishedAfter?: string;
+  publishedBefore?: string;
   published?: boolean;
 }
 
 export interface GetPageQuery {
-  include_deleted?: boolean;
+  includeDeleted?: boolean;
 }
 
 export interface CreatePageRequest {
   title?: string;
-  hero_url?: string | null;
-  collection_id?: string | null;
-  data_model_id?: string | null;
+  heroUrl?: string | null;
+  collectionId?: string | null;
+  dataModelId?: string | null;
   language?: string;
-  status_id?: string | null;
-  author_id?: string | null;
-  reviewer_id?: string | null;
-  published_at?: string | null;
-  content_format?: PageContentFormat;
+  statusId?: string | null;
+  authorId?: string | null;
+  reviewerId?: string | null;
+  publishedAt?: string | null;
+  contentFormat?: PageContentFormat;
   content?: PageContent;
   fields?: Record<string, unknown>;
   slug?: string | null;
-  meta_name?: string | null;
-  meta_description?: string | null;
-  label_ids?: string[];
+  metaName?: string | null;
+  metaDescription?: string | null;
+  labelIds?: string[];
 }
 
 export type UpdatePageRequest = CreatePageRequest;
@@ -393,33 +391,33 @@ export interface CreatePageTranslationRequest {
 }
 
 export interface CollectionListQuery extends ListQuery {
-  default_data_model_id?: string;
+  defaultDataModelId?: string;
 }
 
 export interface CreateCollectionRequest {
   name: string;
   description?: string | null;
-  default_data_model_id?: string | null;
-  team_ids?: string[];
+  defaultDataModelId?: string | null;
+  teamIds?: string[];
 }
 
 export type UpdateCollectionRequest = Partial<CreateCollectionRequest>;
 
 export interface MediaListQuery extends ListQuery {
-  page_id?: string;
-  mime_type?: string;
+  pageId?: string;
+  mimeType?: string;
 }
 
 export interface UploadMediaRequest {
   file: Uploadable;
-  file_name?: string;
-  content_type?: string;
-  page_id: string;
+  fileName?: string;
+  contentType?: string;
+  pageId: string;
   alt?: string | null;
 }
 
 export interface UpdateMediaRequest {
-  file_name?: string;
+  fileName?: string;
   alt?: string | null;
 }
 
@@ -442,7 +440,7 @@ export type UpdateStatusRequest = Partial<CreateStatusRequest>;
 
 export interface ReorderStatusesRequest {
   type: StatusType;
-  status_ids: string[];
+  statusIds: string[];
 }
 
 export interface CreateLabelRequest {
@@ -456,7 +454,7 @@ export type UpdateLabelRequest = Partial<CreateLabelRequest>;
 export interface LabelListQuery extends ListQuery {}
 
 export interface ReorderLabelsRequest {
-  label_ids: string[];
+  labelIds: string[];
 }
 
 export interface DataModelListQuery extends ListQuery {}

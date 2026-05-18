@@ -1,6 +1,6 @@
 # @paragraphcms/client
 
-Official TypeScript client for the Paragraph CMS v1 API.
+Official TypeScript client for the Paragraph CMS API.
 
 <!--
 Replace this block with the README image.
@@ -40,10 +40,10 @@ const client = new Client({
 const { data: allPages, meta } = await client.pages.list();
 
 const { data: collectionPages } = await client.pages.list({
-  collection_id: "collection-id",
+  collectionId: "collection-id",
 });
 
-console.log(meta.total_items);
+console.log(meta.totalItems);
 console.log(collectionPages.map((page) => page.title));
 ```
 
