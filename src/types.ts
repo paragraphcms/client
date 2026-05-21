@@ -47,7 +47,7 @@ export interface ApiInfo {
   version: string;
   openapiUrl: string;
   authentication: {
-    type: "api_key";
+    type: "apiKey";
     supportedHeaders: ["x-api-key", "authorization"];
     authorizationFormat: "Bearer <api-key>";
   };
@@ -351,6 +351,7 @@ export interface PageListQuery extends ListQuery {
   language?: string;
   translationGroupId?: string;
   slug?: string;
+  requiredSlug?: boolean;
   labelIds?: string[];
   updatedAfter?: string;
   updatedBefore?: string;

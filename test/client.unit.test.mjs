@@ -25,10 +25,10 @@ test("Client uses the official API endpoint and serializes query arrays", async 
         meta: {
           page: 1,
           limit: 20,
-          total_items: 0,
-          total_pages: 0,
-          has_next_page: false,
-          has_prev_page: false,
+          totalItems: 0,
+          totalPages: 0,
+          hasNextPage: false,
+          hasPrevPage: false,
         },
       });
     },
@@ -46,8 +46,8 @@ test("Client uses the official API endpoint and serializes query arrays", async 
   const url = new URL(String(input));
 
   assert.equal(url.origin + url.pathname, "https://api.paragraphcms.com/v1/pages");
-  assert.equal(url.searchParams.get("include_content"), "true");
-  assert.equal(url.searchParams.get("label_id"), "label-a,label-b");
+  assert.equal(url.searchParams.get("includeContent"), "true");
+  assert.equal(url.searchParams.get("labelIds"), "label-a,label-b");
   assert.equal(url.searchParams.get("deleted"), "include");
   assert.equal(url.searchParams.get("published"), "false");
   assert.equal(url.searchParams.get("page"), null);
@@ -84,7 +84,7 @@ test("Client rejects baseUrl and apiUrl overrides", () => {
   );
 });
 
-test("pages.list maps collectionId to collection_id", async () => {
+test("pages.list preserves collectionId as a camel-cased query param", async () => {
   const calls = [];
   const client = new Client({
     apiKey: "test-key",
@@ -97,10 +97,10 @@ test("pages.list maps collectionId to collection_id", async () => {
         meta: {
           page: 1,
           limit: 20,
-          total_items: 0,
-          total_pages: 0,
-          has_next_page: false,
-          has_prev_page: false,
+          totalItems: 0,
+          totalPages: 0,
+          hasNextPage: false,
+          hasPrevPage: false,
         },
       });
     },
@@ -110,8 +110,53 @@ test("pages.list maps collectionId to collection_id", async () => {
 
   assert.equal(calls.length, 1);
   assert.equal(
-    calls[0].searchParams.get("collection_id"),
+    calls[0].searchParams.get("collectionId"),
     "collection-123",
+  );
+  assert.equal(calls[0].searchParams.get("requiredSlug"), null);
+  assert.equal(
+    Array.from(calls[0].searchParams.keys()).some((key) => key.includes("_")),
+    false,
+  );
+});
+
+test("page.list aliases pages.list and keeps requiredSlug camel-cased in the API query", async () => {
+  const calls = [];
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async (input) => {
+      const url = new URL(String(input));
+      calls.push(url);
+
+      return Response.json({
+        data: [],
+        meta: {
+          page: 1,
+          limit: 20,
+          totalItems: 0,
+          totalPages: 0,
+          hasNextPage: false,
+          hasPrevPage: false,
+        },
+      });
+    },
+  });
+
+  await client.page.list({ requiredSlug: true });
+  await client.page.list({ requiredSlug: false });
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].searchParams.get("requiredSlug"), "true");
+  assert.equal(calls[0].searchParams.get("includeContent"), "false");
+  assert.equal(calls[1].searchParams.get("requiredSlug"), null);
+  assert.equal(calls[1].searchParams.get("includeContent"), "false");
+  assert.equal(
+    Array.from(calls[0].searchParams.keys()).some((key) => key.includes("_")),
+    false,
+  );
+  assert.equal(
+    Array.from(calls[1].searchParams.keys()).some((key) => key.includes("_")),
+    false,
   );
 });
 
@@ -136,10 +181,10 @@ test("pages.list without explicit pagination aggregates every API page", async (
         meta: {
           page,
           limit: 2,
-          total_items: 3,
-          total_pages: 2,
-          has_next_page: page === 1,
-          has_prev_page: page > 1,
+          totalItems: 3,
+          totalPages: 2,
+          hasNextPage: page === 1,
+          hasPrevPage: page > 1,
         },
       });
     },
@@ -148,11 +193,11 @@ test("pages.list without explicit pagination aggregates every API page", async (
   const listed = await client.pages.list({ deleted: "include" });
 
   assert.equal(calls.length, 2);
-  assert.equal(calls[0].searchParams.get("include_content"), "false");
+  assert.equal(calls[0].searchParams.get("includeContent"), "false");
   assert.equal(calls[0].searchParams.get("deleted"), "include");
   assert.equal(calls[0].searchParams.get("page"), null);
   assert.equal(calls[0].searchParams.get("limit"), null);
-  assert.equal(calls[1].searchParams.get("include_content"), "false");
+  assert.equal(calls[1].searchParams.get("includeContent"), "false");
   assert.equal(calls[1].searchParams.get("deleted"), "include");
   assert.equal(calls[1].searchParams.get("page"), "2");
   assert.equal(calls[1].searchParams.get("limit"), "2");
@@ -176,18 +221,18 @@ test("media.upload builds multipart form data for binary buffers", async () => {
           message: "uploaded",
           media: {
             id: "media-id",
-            page_id: "page-id",
-            file_name: "hero.png",
+            pageId: "page-id",
+            fileName: "hero.png",
             alt: "Hero",
-            mime_type: "image/png",
+            mimeType: "image/png",
             size: 68,
             width: 1,
             height: 1,
             url: "https://example.com/hero.png",
-            created_at: null,
-            updated_at: null,
+            createdAt: null,
+            updatedAt: null,
           },
-          editor_node: {},
+          editorNode: {},
         },
       });
     },
@@ -205,7 +250,7 @@ test("media.upload builds multipart form data for binary buffers", async () => {
   assert.equal(init.method, "POST");
   assert.equal(init.headers.get("content-type"), null);
   assert.equal(init.body instanceof FormData, true);
-  assert.equal(init.body.get("page_id"), "page-id");
+  assert.equal(init.body.get("pageId"), "page-id");
   assert.equal(init.body.get("alt"), "Hero");
 
   const file = init.body.get("file");
@@ -222,7 +267,7 @@ test("Client converts API errors into ParagraphApiError", async () => {
       new Response(
         JSON.stringify({
           error: {
-            code: "page_not_found",
+            code: "pageNotFound",
             message: "Page not found.",
             details: { pageId: "missing" },
           },
@@ -241,7 +286,7 @@ test("Client converts API errors into ParagraphApiError", async () => {
     (error) => {
       assert.equal(error instanceof ParagraphApiError, true);
       assert.equal(error.status, 404);
-      assert.equal(error.code, "page_not_found");
+      assert.equal(error.code, "pageNotFound");
       assert.deepEqual(error.details, { pageId: "missing" });
       return true;
     },
@@ -260,7 +305,7 @@ test("Client retries 429 responses using Retry-After", async () => {
         return new Response(
           JSON.stringify({
             error: {
-              code: "rate_limited",
+              code: "rateLimited",
               message: "Too many requests.",
             },
           }),
@@ -277,11 +322,11 @@ test("Client retries 429 responses using Retry-After", async () => {
       return Response.json({
         data: {
           version: "v1",
-          openapi_url: "/v1/openapi.json",
+          openapiUrl: "/v1/openapi.json",
           authentication: {
-            type: "api_key",
-            supported_headers: ["x-api-key", "authorization"],
-            authorization_format: "Bearer <api-key>",
+            type: "apiKey",
+            supportedHeaders: ["x-api-key", "authorization"],
+            authorizationFormat: "Bearer <api-key>",
           },
           resources: [],
         },
@@ -309,7 +354,7 @@ test("Client stops retrying 429 responses after maxRateLimitRetries", async () =
       return new Response(
         JSON.stringify({
           error: {
-            code: "rate_limited",
+            code: "rateLimited",
             message: "Too many requests.",
           },
         }),
@@ -329,7 +374,7 @@ test("Client stops retrying 429 responses after maxRateLimitRetries", async () =
     (error) => {
       assert.equal(error instanceof ParagraphApiError, true);
       assert.equal(error.status, 429);
-      assert.equal(error.code, "rate_limited");
+      assert.equal(error.code, "rateLimited");
       assert.equal(calls, 2);
       return true;
     },
@@ -355,10 +400,10 @@ test("page.getBySlug resolves the page through slug lookup and returns full deta
           meta: {
             page: 1,
             limit: 100,
-            total_items: 1,
-            total_pages: 1,
-            has_next_page: false,
-            has_prev_page: false,
+            totalItems: 1,
+            totalPages: 1,
+            hasNextPage: false,
+            hasPrevPage: false,
           },
         });
       }
@@ -385,7 +430,7 @@ test("page.getBySlug resolves the page through slug lookup and returns full deta
   assert.equal(page.slug, "pricing");
   assert.equal(calls.length, 2);
   assert.equal(calls[0].pathname, "/v1/pages");
-  assert.equal(calls[0].searchParams.get("include_content"), "false");
+  assert.equal(calls[0].searchParams.get("includeContent"), "false");
   assert.equal(calls[0].searchParams.get("slug"), "pricing");
   assert.equal(calls[0].searchParams.get("page"), "1");
   assert.equal(calls[0].searchParams.get("limit"), "100");
@@ -439,32 +484,32 @@ test("members.get paginates list responses until the member is found", async () 
             ? [
                 {
                   id: "member-1",
-                  user_id: "user-1",
+                  userId: "user-1",
                   role: "editor",
                   name: "Editor One",
                   email: "editor-1@example.com",
-                  image_url: null,
-                  created_at: null,
+                  imageUrl: null,
+                  createdAt: null,
                 },
               ]
             : [
                 {
                   id: "member-2",
-                  user_id: "user-2",
+                  userId: "user-2",
                   role: "editor",
                   name: "Editor Two",
                   email: "editor-2@example.com",
-                  image_url: null,
-                  created_at: null,
+                  imageUrl: null,
+                  createdAt: null,
                 },
               ],
         meta: {
           page,
           limit: 100,
-          total_items: 2,
-          total_pages: 2,
-          has_next_page: page === 1,
-          has_prev_page: page > 1,
+          totalItems: 2,
+          totalPages: 2,
+          hasNextPage: page === 1,
+          hasPrevPage: page > 1,
         },
       });
     },
@@ -521,10 +566,10 @@ test("SDK lookup helpers return ParagraphApiError when the resource is missing",
         meta: {
           page: 1,
           limit: 100,
-          total_items: 0,
-          total_pages: 0,
-          has_next_page: false,
-          has_prev_page: false,
+          totalItems: 0,
+          totalPages: 0,
+          hasNextPage: false,
+          hasPrevPage: false,
         },
       }),
   });
@@ -534,7 +579,7 @@ test("SDK lookup helpers return ParagraphApiError when the resource is missing",
     (error) => {
       assert.equal(error instanceof ParagraphApiError, true);
       assert.equal(error.status, 404);
-      assert.equal(error.code, "member_not_found");
+      assert.equal(error.code, "memberNotFound");
       assert.deepEqual(error.details, { memberId: "missing-member" });
       assert.equal(
         error.request.url,
@@ -549,11 +594,11 @@ test("SDK lookup helpers return ParagraphApiError when the resource is missing",
     (error) => {
       assert.equal(error instanceof ParagraphApiError, true);
       assert.equal(error.status, 404);
-      assert.equal(error.code, "page_not_found");
+      assert.equal(error.code, "pageNotFound");
       assert.deepEqual(error.details, { slug: "missing-page" });
       assert.equal(
         error.request.url,
-        "https://api.paragraphcms.com/v1/pages?slug=missing-page&include_content=false&page=1&limit=100",
+        "https://api.paragraphcms.com/v1/pages?slug=missing-page&includeContent=false&page=1&limit=100",
       );
       return true;
     },
@@ -570,11 +615,11 @@ test("Client rate-limits request starts per instance", async () => {
       return Response.json({
         data: {
           version: "v1",
-          openapi_url: "/v1/openapi.json",
+          openapiUrl: "/v1/openapi.json",
           authentication: {
-            type: "api_key",
-            supported_headers: ["x-api-key", "authorization"],
-            authorization_format: "Bearer <api-key>",
+            type: "apiKey",
+            supportedHeaders: ["x-api-key", "authorization"],
+            authorizationFormat: "Bearer <api-key>",
           },
           resources: [],
         },
@@ -604,11 +649,11 @@ test("Client binds the global fetch implementation to globalThis", async () => {
     return Response.json({
       data: {
         version: "v1",
-        openapi_url: "/v1/openapi.json",
+        openapiUrl: "/v1/openapi.json",
         authentication: {
-          type: "api_key",
-          supported_headers: ["x-api-key", "authorization"],
-          authorization_format: "Bearer <api-key>",
+          type: "apiKey",
+          supportedHeaders: ["x-api-key", "authorization"],
+          authorizationFormat: "Bearer <api-key>",
         },
         resources: [],
       },

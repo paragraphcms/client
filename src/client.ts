@@ -86,12 +86,6 @@ const PRESERVED_TRANSFORM_KEYS = new Set([
   "editorNode",
   "fields",
 ]);
-const SPECIAL_API_KEY_MAP: Record<string, string> = {
-  labelIds: "label_id",
-};
-const SPECIAL_SDK_KEY_MAP: Record<string, string> = {
-  label_id: "labelIds",
-};
 
 function resolveFetchImplementation(
   customFetch: FetchLike | undefined,
@@ -122,25 +116,9 @@ function isPlainObject(value: unknown): value is PlainObject {
 }
 
 function toCamelCaseKey(key: string) {
-  const mappedKey = SPECIAL_SDK_KEY_MAP[key];
-
-  if (mappedKey) {
-    return mappedKey;
-  }
-
   return key.replace(/_([a-z])/g, (_match, letter: string) =>
     letter.toUpperCase(),
   );
-}
-
-function toSnakeCaseKey(key: string) {
-  const mappedKey = SPECIAL_API_KEY_MAP[key];
-
-  if (mappedKey) {
-    return mappedKey;
-  }
-
-  return key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 }
 
 function transformKeysDeep(
@@ -175,7 +153,7 @@ function transformKeysDeep(
 }
 
 function toApiPayload<T>(value: T) {
-  return transformKeysDeep(value, toSnakeCaseKey) as T;
+  return value;
 }
 
 function toSdkPayload<T>(value: T) {
@@ -516,7 +494,7 @@ function createUploadFormData(input: UploadMediaRequest) {
     formData.append("file", filePart.value);
   }
 
-  formData.append("page_id", input.pageId);
+  formData.append("pageId", input.pageId);
 
   if (input.alt !== undefined && input.alt !== null) {
     formData.append("alt", input.alt);
@@ -611,6 +589,8 @@ export class Client {
   };
 
   readonly page = {
+    list: (query?: PageListQuery, options?: RequestOptions) =>
+      this.pages.list(query, options),
     get: (
       pageId: string,
       query?: GetPageQuery,
@@ -719,7 +699,7 @@ export class Client {
         (member) => member.id === memberId,
         options,
         {
-          code: "member_not_found",
+          code: "memberNotFound",
           message: "Member not found.",
           details: { memberId },
         },
@@ -738,7 +718,7 @@ export class Client {
         (author) => author.id === authorId,
         options,
         {
-          code: "author_not_found",
+          code: "authorNotFound",
           message: "Author not found.",
           details: { authorId },
         },
@@ -757,7 +737,7 @@ export class Client {
         (reviewer) => reviewer.id === reviewerId,
         options,
         {
-          code: "reviewer_not_found",
+          code: "reviewerNotFound",
           message: "Reviewer not found.",
           details: { reviewerId },
         },
@@ -922,7 +902,7 @@ export class Client {
         (locale) => locale.code === code,
         options,
         {
-          code: "locale_not_found",
+          code: "localeNotFound",
           message: "Locale not found.",
           details: { code },
         },
@@ -1064,9 +1044,12 @@ export class Client {
   }
 
   private createPageListQuery(query?: PageListQuery): PageListQuery {
+    const { requiredSlug, ...restQuery } = query ?? {};
+
     return {
-      ...(query ?? {}),
-      includeContent: query?.includeContent ?? false,
+      ...restQuery,
+      includeContent: restQuery.includeContent ?? false,
+      ...(requiredSlug === true ? { requiredSlug: true } : {}),
     };
   }
 
@@ -1106,7 +1089,7 @@ export class Client {
       (item) => item.slug === slug,
       options,
       {
-        code: "page_not_found",
+        code: "pageNotFound",
         message: "Page not found.",
         details: { slug },
       },
@@ -1305,7 +1288,7 @@ export class Client {
                 code:
                   response.status === 401
                     ? "unauthorized"
-                    : "request_failed",
+                    : "requestFailed",
                 message:
                   typeof payload === "string" && payload.length > 0
                     ? payload

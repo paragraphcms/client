@@ -43,8 +43,13 @@ const { data: collectionPages } = await client.pages.list({
   collectionId: "collection-id",
 });
 
+const { data: pagesWithSlugs } = await client.page.list({
+  requiredSlug: true,
+});
+
 console.log(meta.totalItems);
 console.log(collectionPages.map((page) => page.title));
+console.log(pagesWithSlugs.map((page) => page.slug));
 ```
 
 ### Get a Page by Slug
