@@ -7,6 +7,12 @@ import {
   ParagraphClientError,
 } from "../dist/index.js";
 
+function toRequest(input, init) {
+  return input instanceof Request
+    ? input
+    : new Request(input, init);
+}
+
 test("Client requires an API key", () => {
   assert.throws(
     () => new Client({ apiKey: "   " }),
@@ -14,12 +20,12 @@ test("Client requires an API key", () => {
   );
 });
 
-test("Client uses the official API endpoint and serializes query arrays", async () => {
+test("Client uses the official API endpoint and maps hasPublished to published", async () => {
   const calls = [];
   const client = new Client({
     apiKey: "test-key",
     fetch: async (input, init) => {
-      calls.push({ input, init });
+      calls.push(toRequest(input, init));
       return Response.json({
         data: [],
         meta: {
@@ -38,12 +44,12 @@ test("Client uses the official API endpoint and serializes query arrays", async 
     includeContent: true,
     labelIds: ["label-a", "label-b"],
     deleted: "include",
-    published: false,
+    hasPublished: false,
   });
 
   assert.equal(calls.length, 1);
-  const [{ input, init }] = calls;
-  const url = new URL(String(input));
+  const [request] = calls;
+  const url = new URL(request.url);
 
   assert.equal(url.origin + url.pathname, "https://api.paragraphcms.com/v1/pages");
   assert.equal(url.searchParams.get("includeContent"), "true");
@@ -52,9 +58,37 @@ test("Client uses the official API endpoint and serializes query arrays", async 
   assert.equal(url.searchParams.get("published"), "false");
   assert.equal(url.searchParams.get("page"), null);
   assert.equal(url.searchParams.get("limit"), null);
-  assert.equal(init.method, "GET");
-  assert.equal(init.headers.get("x-api-key"), "test-key");
-  assert.equal(init.headers.get("accept"), "application/json");
+  assert.equal(request.method, "GET");
+  assert.equal(request.headers.get("x-api-key"), "test-key");
+  assert.equal(request.headers.get("accept"), "application/json");
+});
+
+test("Client still accepts the legacy published filter", async () => {
+  const calls = [];
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async (input, init) => {
+      const url = new URL(toRequest(input, init).url);
+      calls.push(url);
+
+      return Response.json({
+        data: [],
+        meta: {
+          page: 1,
+          limit: 20,
+          totalItems: 0,
+          totalPages: 0,
+          hasNextPage: false,
+          hasPrevPage: false,
+        },
+      });
+    },
+  });
+
+  await client.pages.list({ published: false });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].searchParams.get("published"), "false");
 });
 
 test("Client rejects baseUrl and apiUrl overrides", () => {
@@ -84,12 +118,12 @@ test("Client rejects baseUrl and apiUrl overrides", () => {
   );
 });
 
-test("pages.list preserves collectionId as a camel-cased query param", async () => {
+test("pages.list preserves collection and collectionId query params", async () => {
   const calls = [];
   const client = new Client({
     apiKey: "test-key",
-    fetch: async (input) => {
-      const url = new URL(String(input));
+    fetch: async (input, init) => {
+      const url = new URL(toRequest(input, init).url);
       calls.push(url);
 
       return Response.json({
@@ -106,13 +140,18 @@ test("pages.list preserves collectionId as a camel-cased query param", async () 
     },
   });
 
-  await client.pages.list({ collectionId: "collection-123" });
+  await client.pages.list({
+    collection: "Blog",
+    collectionId: "collection-123",
+  });
 
   assert.equal(calls.length, 1);
+  assert.equal(calls[0].searchParams.get("collection"), "Blog");
   assert.equal(
     calls[0].searchParams.get("collectionId"),
     "collection-123",
   );
+  assert.equal(calls[0].searchParams.get("published"), "true");
   assert.equal(calls[0].searchParams.get("requiredSlug"), null);
   assert.equal(
     Array.from(calls[0].searchParams.keys()).some((key) => key.includes("_")),
@@ -124,8 +163,8 @@ test("page.list aliases pages.list and keeps requiredSlug camel-cased in the API
   const calls = [];
   const client = new Client({
     apiKey: "test-key",
-    fetch: async (input) => {
-      const url = new URL(String(input));
+    fetch: async (input, init) => {
+      const url = new URL(toRequest(input, init).url);
       calls.push(url);
 
       return Response.json({
@@ -148,8 +187,10 @@ test("page.list aliases pages.list and keeps requiredSlug camel-cased in the API
   assert.equal(calls.length, 2);
   assert.equal(calls[0].searchParams.get("requiredSlug"), "true");
   assert.equal(calls[0].searchParams.get("includeContent"), "false");
+  assert.equal(calls[0].searchParams.get("published"), "true");
   assert.equal(calls[1].searchParams.get("requiredSlug"), null);
   assert.equal(calls[1].searchParams.get("includeContent"), "false");
+  assert.equal(calls[1].searchParams.get("published"), "true");
   assert.equal(
     Array.from(calls[0].searchParams.keys()).some((key) => key.includes("_")),
     false,
@@ -164,8 +205,8 @@ test("pages.list without explicit pagination aggregates every API page", async (
   const calls = [];
   const client = new Client({
     apiKey: "test-key",
-    fetch: async (input) => {
-      const url = new URL(String(input));
+    fetch: async (input, init) => {
+      const url = new URL(toRequest(input, init).url);
       calls.push(url);
 
       const page = Number(url.searchParams.get("page") ?? "1");
@@ -195,10 +236,12 @@ test("pages.list without explicit pagination aggregates every API page", async (
   assert.equal(calls.length, 2);
   assert.equal(calls[0].searchParams.get("includeContent"), "false");
   assert.equal(calls[0].searchParams.get("deleted"), "include");
+  assert.equal(calls[0].searchParams.get("published"), "true");
   assert.equal(calls[0].searchParams.get("page"), null);
   assert.equal(calls[0].searchParams.get("limit"), null);
   assert.equal(calls[1].searchParams.get("includeContent"), "false");
   assert.equal(calls[1].searchParams.get("deleted"), "include");
+  assert.equal(calls[1].searchParams.get("published"), "true");
   assert.equal(calls[1].searchParams.get("page"), "2");
   assert.equal(calls[1].searchParams.get("limit"), "2");
   assert.equal(listed.data.length, 3);
@@ -214,8 +257,10 @@ test("media.upload builds multipart form data for binary buffers", async () => {
   const calls = [];
   const client = new Client({
     apiKey: "test-key",
-    fetch: async (_input, init) => {
-      calls.push(init);
+    fetch: async (input, init) => {
+      const request = toRequest(input, init);
+      const formData = await request.clone().formData();
+      calls.push({ request, formData });
       return Response.json({
         data: {
           message: "uploaded",
@@ -246,14 +291,18 @@ test("media.upload builds multipart form data for binary buffers", async () => {
     alt: "Hero",
   });
 
-  const [init] = calls;
-  assert.equal(init.method, "POST");
-  assert.equal(init.headers.get("content-type"), null);
-  assert.equal(init.body instanceof FormData, true);
-  assert.equal(init.body.get("pageId"), "page-id");
-  assert.equal(init.body.get("alt"), "Hero");
+  const [{ request, formData }] = calls;
+  assert.equal(request.method, "POST");
+  assert.equal(
+    request.headers
+      .get("content-type")
+      ?.startsWith("multipart/form-data; boundary="),
+    true,
+  );
+  assert.equal(formData.get("pageId"), "page-id");
+  assert.equal(formData.get("alt"), "Hero");
 
-  const file = init.body.get("file");
+  const file = formData.get("file");
   assert.equal(file instanceof File, true);
   assert.equal(file.name, "hero.png");
   assert.equal(file.type, "image/png");
@@ -385,8 +434,8 @@ test("page.getBySlug resolves the page through slug lookup and returns full deta
   const calls = [];
   const client = new Client({
     apiKey: "test-key",
-    fetch: async (input) => {
-      const url = new URL(String(input));
+    fetch: async (input, init) => {
+      const url = new URL(toRequest(input, init).url);
       calls.push(url);
 
       if (url.pathname === "/v1/pages") {
@@ -432,6 +481,7 @@ test("page.getBySlug resolves the page through slug lookup and returns full deta
   assert.equal(calls[0].pathname, "/v1/pages");
   assert.equal(calls[0].searchParams.get("includeContent"), "false");
   assert.equal(calls[0].searchParams.get("slug"), "pricing");
+  assert.equal(calls[0].searchParams.get("published"), null);
   assert.equal(calls[0].searchParams.get("page"), "1");
   assert.equal(calls[0].searchParams.get("limit"), "100");
   assert.equal(calls[1].pathname, "/v1/pages/page-1");
@@ -441,8 +491,8 @@ test("page.get is a short alias for pages.get", async () => {
   const calls = [];
   const client = new Client({
     apiKey: "test-key",
-    fetch: async (input) => {
-      const url = new URL(String(input));
+    fetch: async (input, init) => {
+      const url = new URL(toRequest(input, init).url);
       calls.push(url);
 
       if (url.pathname === "/v1/pages/page-1") {
@@ -472,8 +522,8 @@ test("members.get paginates list responses until the member is found", async () 
   const calls = [];
   const client = new Client({
     apiKey: "test-key",
-    fetch: async (input) => {
-      const url = new URL(String(input));
+    fetch: async (input, init) => {
+      const url = new URL(toRequest(input, init).url);
       calls.push(url);
 
       const page = Number(url.searchParams.get("page"));
@@ -554,6 +604,27 @@ test("locales.get returns a locale from the locale list", async () => {
 
   assert.equal(locale.id, "locale-pl");
   assert.equal(locale.code, "pl");
+  assert.equal(calls, 1);
+});
+
+test("locales.getDefaultLocale returns the default locale code", async () => {
+  let calls = 0;
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async () => {
+      calls += 1;
+
+      return Response.json({
+        data: {
+          defaultLocale: "en",
+        },
+      });
+    },
+  });
+
+  const defaultLocale = await client.locales.getDefaultLocale();
+
+  assert.equal(defaultLocale, "en");
   assert.equal(calls, 1);
 });
 
@@ -642,9 +713,14 @@ test("Client binds the global fetch implementation to globalThis", async () => {
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = async function (input, init) {
+    const request = toRequest(input, init);
+
     assert.equal(this, globalThis);
-    assert.equal(String(input), "https://api.paragraphcms.com/v1");
-    assert.equal(init.method, "GET");
+    assert.equal(
+      request.url.replace(/\/$/, ""),
+      "https://api.paragraphcms.com/v1",
+    );
+    assert.equal(request.method, "GET");
 
     return Response.json({
       data: {
@@ -666,4 +742,51 @@ test("Client binds the global fetch implementation to globalThis", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("Client retries transient 503 responses", async () => {
+  let calls = 0;
+  const client = new Client({
+    apiKey: "test-key",
+    maxRateLimitRetries: 1,
+    fetch: async () => {
+      calls += 1;
+
+      if (calls === 1) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: "serviceUnavailable",
+              message: "Service unavailable.",
+            },
+          }),
+          {
+            status: 503,
+            headers: {
+              "content-type": "application/json",
+              "retry-after": "0",
+            },
+          },
+        );
+      }
+
+      return Response.json({
+        data: {
+          version: "v1",
+          openapiUrl: "/v1/openapi.json",
+          authentication: {
+            type: "apiKey",
+            supportedHeaders: ["x-api-key", "authorization"],
+            authorizationFormat: "Bearer <api-key>",
+          },
+          resources: [],
+        },
+      });
+    },
+  });
+
+  const info = await client.getInfo();
+
+  assert.equal(info.version, "v1");
+  assert.equal(calls, 2);
 });

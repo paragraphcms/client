@@ -340,6 +340,7 @@ export interface ReorderResult {
 
 export interface PageListQuery extends ListQuery {
   includeContent?: boolean;
+  collection?: string;
   collectionId?: string;
   deleted?: DeletedFilter;
   withoutCollection?: boolean;
@@ -357,6 +358,7 @@ export interface PageListQuery extends ListQuery {
   updatedBefore?: string;
   publishedAfter?: string;
   publishedBefore?: string;
+  hasPublished?: boolean;
   published?: boolean;
 }
 

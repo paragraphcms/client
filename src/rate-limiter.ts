@@ -1,15 +1,10 @@
+import Bottleneck from "bottleneck";
 import { ParagraphClientError } from "./errors.js";
 
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
+const DEFAULT_MAX_CONCURRENT_REQUESTS = 3;
 
 export class RequestRateLimiter {
-  private readonly minIntervalMs: number;
-  private nextAvailableAt = 0;
-  private scheduling: Promise<void> = Promise.resolve();
+  private readonly limiter: Bottleneck;
 
   constructor(requestsPerSecond: number) {
     if (
@@ -21,29 +16,13 @@ export class RequestRateLimiter {
       );
     }
 
-    this.minIntervalMs = Math.ceil(1000 / requestsPerSecond);
+    this.limiter = new Bottleneck({
+      minTime: Math.ceil(1000 / requestsPerSecond),
+      maxConcurrent: DEFAULT_MAX_CONCURRENT_REQUESTS,
+    });
   }
 
   schedule<T>(task: () => Promise<T>) {
-    const slot = this.reserveSlot();
-    return slot.then(task);
-  }
-
-  private reserveSlot() {
-    const slot = this.scheduling.then(async () => {
-      const now = Date.now();
-      const scheduledAt = Math.max(now, this.nextAvailableAt);
-      const delayMs = scheduledAt - now;
-
-      this.nextAvailableAt = scheduledAt + this.minIntervalMs;
-
-      if (delayMs > 0) {
-        await sleep(delayMs);
-      }
-    });
-
-    this.scheduling = slot.catch(() => {});
-
-    return slot;
+    return this.limiter.schedule(task);
   }
 }

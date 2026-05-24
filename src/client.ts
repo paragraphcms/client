@@ -1,3 +1,9 @@
+import ky, {
+  HTTPError,
+  TimeoutError,
+  type KyInstance,
+  type ShouldRetryState,
+} from "ky";
 import {
   ParagraphApiError,
   ParagraphClientError,
@@ -78,14 +84,31 @@ type DataEnvelope<T> = {
 
 const API_BASE_URL = "https://api.paragraphcms.com/v1";
 const DEFAULT_REQUESTS_PER_SECOND = 5;
-const DEFAULT_RATE_LIMIT_RETRIES = 2;
-const DEFAULT_RATE_LIMIT_RETRY_DELAY_MS = 1000;
+const DEFAULT_RATE_LIMIT_RETRIES = 3;
 const LOOKUP_PAGE_SIZE = 100;
 const PRESERVED_TRANSFORM_KEYS = new Set([
   "content",
   "editorNode",
   "fields",
 ]);
+const RETRYABLE_METHODS = [
+  "get",
+  "post",
+  "patch",
+  "delete",
+] as const;
+const SAFE_TRANSIENT_RETRY_METHODS = new Set([
+  "GET",
+  "DELETE",
+]);
+const RETRYABLE_STATUS_CODES = [
+  429,
+  500,
+  502,
+  503,
+  504,
+];
+const RETRY_AFTER_STATUS_CODES = [429, 503];
 
 function resolveFetchImplementation(
   customFetch: FetchLike | undefined,
@@ -244,106 +267,26 @@ function createRequestDescriptor(
   };
 }
 
-function createRequestSignal(
-  signal: AbortSignal | undefined,
-  timeoutMs: number | undefined,
-) {
-  if (!signal && (!timeoutMs || timeoutMs <= 0)) {
-    return {
-      signal: undefined,
-      cleanup: () => {},
-      didTimeout: () => false,
-    };
-  }
+function toKyInput(url: URL) {
+  const path = url.pathname
+    .replace(/^\/v1/, "")
+    .replace(/^\/+/, "");
 
-  const controller = new AbortController();
-  let timedOut = false;
-  let timeoutId: number | undefined;
-
-  const onAbort = () => {
-    controller.abort(signal?.reason);
-  };
-
-  if (signal) {
-    if (signal.aborted) {
-      controller.abort(signal.reason);
-    } else {
-      signal.addEventListener("abort", onAbort, { once: true });
-    }
-  }
-
-  if (timeoutMs && timeoutMs > 0) {
-    timeoutId = setTimeout(() => {
-      timedOut = true;
-      controller.abort(
-        new Error(`Request timed out after ${timeoutMs}ms.`),
-      );
-    }, timeoutMs);
-  }
-
-  return {
-    signal: controller.signal,
-    cleanup: () => {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-      }
-
-      if (signal) {
-        signal.removeEventListener("abort", onAbort);
-      }
-    },
-    didTimeout: () => timedOut,
-  };
+  return `${path}${url.search}`;
 }
 
-function waitForDelay(
-  delayMs: number,
-  signal?: AbortSignal,
-) {
-  if (delayMs <= 0) {
-    return Promise.resolve();
-  }
-
-  return new Promise<void>((resolve, reject) => {
-    let timeoutId: number | undefined;
-
-    const cleanup = () => {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-      }
-
-      if (signal) {
-        signal.removeEventListener("abort", onAbort);
-      }
-    };
-
-    const onAbort = () => {
-      cleanup();
-      reject(
-        signal?.reason ??
-          new DOMException("The operation was aborted.", "AbortError"),
-      );
-    };
-
-    if (signal) {
-      if (signal.aborted) {
-        onAbort();
-        return;
-      }
-
-      signal.addEventListener("abort", onAbort, { once: true });
-    }
-
-    timeoutId = setTimeout(() => {
-      cleanup();
-      resolve();
-    }, delayMs);
-  });
+function canRetryTransientRequest(method: string | undefined) {
+  return (
+    typeof method === "string" &&
+    SAFE_TRANSIENT_RETRY_METHODS.has(method.toUpperCase())
+  );
 }
 
 function isAbortError(error: unknown) {
   return (
-    error instanceof DOMException && error.name === "AbortError"
+    (error instanceof DOMException &&
+      error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError")
   );
 }
 
@@ -365,34 +308,39 @@ function resolveMaxRateLimitRetries(
   return resolved;
 }
 
-function parseRetryAfterMs(headerValue: string | null) {
-  if (!headerValue) {
-    return undefined;
-  }
-
-  const seconds = Number(headerValue);
-
-  if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.ceil(seconds * 1000);
-  }
-
-  const retryAt = Date.parse(headerValue);
-
-  if (Number.isNaN(retryAt)) {
-    return undefined;
-  }
-
-  return Math.max(0, retryAt - Date.now());
+function resolveTotalTimeout(
+  timeoutMs: number | undefined,
+) {
+  return timeoutMs && timeoutMs > 0 ? timeoutMs : false;
 }
 
-function resolveRateLimitRetryDelayMs(
-  headers: Headers,
-  retryCount: number,
-) {
-  return (
-    parseRetryAfterMs(headers.get("retry-after")) ??
-    DEFAULT_RATE_LIMIT_RETRY_DELAY_MS * 2 ** retryCount
-  );
+function createRetryOptions(limit: number) {
+  return {
+    limit,
+    methods: [...RETRYABLE_METHODS],
+    statusCodes: [...RETRYABLE_STATUS_CODES],
+    afterStatusCodes: [...RETRY_AFTER_STATUS_CODES],
+    retryOnTimeout: false,
+    shouldRetry: ({ error }: ShouldRetryState) => {
+      if (error instanceof HTTPError) {
+        if (error.response.status === 429) {
+          return true;
+        }
+
+        return canRetryTransientRequest(
+          error.request.method,
+        )
+          ? undefined
+          : false;
+      }
+
+      return canRetryTransientRequest(
+        (error as { request?: Request }).request?.method,
+      )
+        ? undefined
+        : false;
+    },
+  };
 }
 
 function toBlobPart(file: UploadMediaRequest["file"]) {
@@ -505,11 +453,10 @@ function createUploadFormData(input: UploadMediaRequest) {
 
 export class Client {
   private readonly apiKey: string;
-  private readonly fetchImpl: FetchLike;
+  private readonly http: KyInstance;
   private readonly defaultHeaders: Headers;
   private readonly timeoutMs?: number;
   private readonly maxRateLimitRetries: number;
-  private readonly limiter: RequestRateLimiter;
 
   readonly pages = {
     list: (query?: PageListQuery, options?: RequestOptions) =>
@@ -896,6 +843,17 @@ export class Client {
       this.requestData<Locale[]>("GET", "/locales", {
         options,
       }),
+    getDefaultLocale: async (options?: RequestOptions) => {
+      const response = await this.requestData<{ defaultLocale: string }>(
+        "GET",
+        "/locales/default",
+        {
+          options,
+        },
+      );
+
+      return response.defaultLocale;
+    },
     get: (code: string, options?: RequestOptions) =>
       this.findArrayItem<Locale>(
         "/locales",
@@ -978,15 +936,21 @@ export class Client {
     }
 
     this.apiKey = options.apiKey.trim();
-    this.fetchImpl = resolveFetchImplementation(options.fetch);
     this.defaultHeaders = new Headers(options.headers);
     this.timeoutMs = options.timeoutMs;
     this.maxRateLimitRetries = resolveMaxRateLimitRetries(
       options.maxRateLimitRetries,
     );
-    this.limiter = new RequestRateLimiter(
+    const fetchImpl = resolveFetchImplementation(options.fetch);
+    const limiter = new RequestRateLimiter(
       options.maxRequestsPerSecond ?? DEFAULT_REQUESTS_PER_SECOND,
     );
+    this.http = ky.create({
+      fetch: (input, init) =>
+        limiter.schedule(() => fetchImpl(input, init)),
+      prefix: API_BASE_URL,
+      timeout: false,
+    });
   }
 
   getInfo(options?: RequestOptions) {
@@ -997,7 +961,9 @@ export class Client {
     query?: PageListQuery,
     options?: RequestOptions,
   ) {
-    const pageListQuery = this.createPageListQuery(query);
+    const pageListQuery = this.createPageListQuery(query, {
+      defaultHasPublished: true,
+    });
     const response = await this.requestList<PageSummary>("GET", "/pages", {
       query: pageListQuery,
       options,
@@ -1043,12 +1009,29 @@ export class Client {
     };
   }
 
-  private createPageListQuery(query?: PageListQuery): PageListQuery {
-    const { requiredSlug, ...restQuery } = query ?? {};
+  private createPageListQuery(
+    query?: PageListQuery,
+    config?: {
+      defaultHasPublished?: boolean;
+    },
+  ): PageListQuery {
+    const {
+      requiredSlug,
+      hasPublished,
+      published,
+      ...restQuery
+    } = query ?? {};
+    const resolvedPublished =
+      hasPublished ??
+      published ??
+      (config?.defaultHasPublished === true ? true : undefined);
 
     return {
       ...restQuery,
       includeContent: restQuery.includeContent ?? false,
+      ...(resolvedPublished !== undefined
+        ? { published: resolvedPublished }
+        : {}),
       ...(requiredSlug === true ? { requiredSlug: true } : {}),
     };
   }
@@ -1205,6 +1188,7 @@ export class Client {
     },
   ) {
     const url = buildUrl(path, config?.query);
+    const kyInput = toKyInput(url);
     const request = createRequestDescriptor(method, url);
     const headers = new Headers(this.defaultHeaders);
     const timeoutMs =
@@ -1246,37 +1230,31 @@ export class Client {
       headers.delete("content-type");
     }
 
-    const requestSignal = createRequestSignal(
-      config?.options?.signal,
-      timeoutMs,
-    );
-
     return (async () => {
-      let retryCount = 0;
-
       try {
-        const fetchImpl = this.fetchImpl;
+        const response = await this.http(kyInput, {
+          method,
+          headers,
+          body,
+          signal: config?.options?.signal,
+          timeout: false,
+          totalTimeout: resolveTotalTimeout(timeoutMs),
+          retry: createRetryOptions(maxRateLimitRetries),
+        });
+        const payload = await parseResponse(response);
 
-        while (true) {
-          const response = await this.limiter.schedule(() =>
-            fetchImpl(url, {
-              method,
-              headers,
-              body,
-              signal: requestSignal.signal,
-            }),
+        return toSdkPayload(payload) as T;
+      } catch (error) {
+        if (error instanceof HTTPError) {
+          const responseHeaders = new Headers(
+            error.response.headers,
           );
-          const payload = await parseResponse(response);
+          const payload = error.data;
 
-          if (response.ok) {
-            return toSdkPayload(payload) as T;
-          }
-
-          const responseHeaders = new Headers(response.headers);
-          const apiError = isApiErrorPayload(payload)
+          throw isApiErrorPayload(payload)
             ? new ParagraphApiError({
                 body: toSdkPayload(payload),
-                status: response.status,
+                status: error.response.status,
                 code: payload.error.code,
                 message: payload.error.message,
                 details: toSdkPayload(payload.error.details),
@@ -1284,44 +1262,22 @@ export class Client {
                 request,
               })
             : new ParagraphApiError({
-                status: response.status,
+                status: error.response.status,
                 code:
-                  response.status === 401
+                  error.response.status === 401
                     ? "unauthorized"
                     : "requestFailed",
                 message:
                   typeof payload === "string" && payload.length > 0
                     ? payload
-                    : response.statusText || "Request failed.",
+                    : error.response.statusText ||
+                      "Request failed.",
                 headers: responseHeaders,
                 request,
               });
-
-          if (
-            response.status === 429 &&
-            retryCount < maxRateLimitRetries
-          ) {
-            const retryDelayMs = resolveRateLimitRetryDelayMs(
-              responseHeaders,
-              retryCount,
-            );
-
-            retryCount += 1;
-            await waitForDelay(retryDelayMs, requestSignal.signal);
-            continue;
-          }
-
-          throw apiError;
-        }
-      } catch (error) {
-        if (
-          error instanceof ParagraphApiError ||
-          error instanceof ParagraphClientError
-        ) {
-          throw error;
         }
 
-        if (requestSignal.didTimeout()) {
+        if (error instanceof TimeoutError) {
           throw new ParagraphClientError(
             `Request timed out after ${timeoutMs}ms.`,
             {
@@ -1342,8 +1298,6 @@ export class Client {
           request,
           cause: error,
         });
-      } finally {
-        requestSignal.cleanup();
       }
     })();
   }

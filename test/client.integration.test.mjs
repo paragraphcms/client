@@ -283,6 +283,10 @@ test(
       assert.equal(Array.isArray(locales), true);
       assert.equal(locales.some((item) => item.code === localeCode), true);
 
+      const defaultLocale = await client.locales.getDefaultLocale();
+      assert.equal(typeof defaultLocale, "string");
+      assert.equal(locales.some((item) => item.code === defaultLocale), true);
+
       const pageResult = await client.pages.create({
         title: `${prefix} page`,
         language: "en",
@@ -314,6 +318,8 @@ test(
 
       const listed = await client.pages.list({
         q: prefix,
+        collection: `${prefix}-collection-updated`,
+        hasPublished: false,
         includeContent: true,
         labelIds: created.labelIds,
         slug: `${prefix}-page`,

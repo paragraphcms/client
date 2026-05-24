@@ -1,6 +1,6 @@
 {
   "name": "@paragraphcms/client",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "Official TypeScript client for the Paragraph CMS API.",
   "license": "MIT",
   "author": "Paragraph CMS",
@@ -41,5 +41,9 @@
   ],
   "devDependencies": {
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "bottleneck": "^2.19.5",
+    "ky": "^2.0.2"
   }
 }
