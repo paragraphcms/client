@@ -42,7 +42,7 @@ const client = new Client({
 const { data: publishedPages, meta } = await client.pages.list();
 
 const { data: allPages } = await client.pages.list({
-  hasPublished: false,
+  published: false,
 });
 
 const { data: collectionPages } = await client.pages.list({
@@ -65,7 +65,7 @@ console.log(collectionPagesById.map((page) => page.title));
 console.log(pagesWithSlugs.map((page) => page.slug));
 ```
 
-`client.pages.list()` now returns only published pages by default. To include unpublished pages, pass `hasPublished: false`.
+`client.pages.list()` now returns only published pages by default. To include unpublished pages, pass `published: false`.
 
 ### Get a Page by Slug
 

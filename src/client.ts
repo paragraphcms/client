@@ -323,10 +323,6 @@ function createRetryOptions(limit: number) {
     retryOnTimeout: false,
     shouldRetry: ({ error }: ShouldRetryState) => {
       if (error instanceof HTTPError) {
-        if (error.response.status === 429) {
-          return true;
-        }
-
         return canRetryTransientRequest(
           error.request.method,
         )

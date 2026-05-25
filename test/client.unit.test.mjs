@@ -8,16 +8,11 @@ import {
 } from "../dist/index.js";
 
 function toRequest(input, init) {
-  return input instanceof Request
-    ? input
-    : new Request(input, init);
+  return input instanceof Request ? input : new Request(input, init);
 }
 
 test("Client requires an API key", () => {
-  assert.throws(
-    () => new Client({ apiKey: "   " }),
-    ParagraphClientError,
-  );
+  assert.throws(() => new Client({ apiKey: "   " }), ParagraphClientError);
 });
 
 test("Client uses the official API endpoint and maps hasPublished to published", async () => {
@@ -44,14 +39,17 @@ test("Client uses the official API endpoint and maps hasPublished to published",
     includeContent: true,
     labelIds: ["label-a", "label-b"],
     deleted: "include",
-    hasPublished: false,
+    published: false,
   });
 
   assert.equal(calls.length, 1);
   const [request] = calls;
   const url = new URL(request.url);
 
-  assert.equal(url.origin + url.pathname, "https://api.paragraphcms.com/v1/pages");
+  assert.equal(
+    url.origin + url.pathname,
+    "https://api.paragraphcms.com/v1/pages",
+  );
   assert.equal(url.searchParams.get("includeContent"), "true");
   assert.equal(url.searchParams.get("labelIds"), "label-a,label-b");
   assert.equal(url.searchParams.get("deleted"), "include");
@@ -147,10 +145,7 @@ test("pages.list preserves collection and collectionId query params", async () =
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].searchParams.get("collection"), "Blog");
-  assert.equal(
-    calls[0].searchParams.get("collectionId"),
-    "collection-123",
-  );
+  assert.equal(calls[0].searchParams.get("collectionId"), "collection-123");
   assert.equal(calls[0].searchParams.get("published"), "true");
   assert.equal(calls[0].searchParams.get("requiredSlug"), null);
   assert.equal(
@@ -390,6 +385,61 @@ test("Client retries 429 responses using Retry-After", async () => {
   assert.equal(info.version, "v1");
   assert.equal(info.openapiUrl, "/v1/openapi.json");
   assert.equal(calls, 2);
+});
+
+test("Client respects Retry-After delays for 429 responses", async () => {
+  let calls = 0;
+  const callTimes = [];
+  const client = new Client({
+    apiKey: "test-key",
+    maxRateLimitRetries: 0,
+    fetch: async () => {
+      calls += 1;
+      callTimes.push(Date.now());
+
+      if (calls === 1) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: "rateLimited",
+              message: "Too many requests.",
+            },
+          }),
+          {
+            status: 429,
+            headers: {
+              "content-type": "application/json",
+              "retry-after": "1",
+            },
+          },
+        );
+      }
+
+      return Response.json({
+        data: {
+          version: "v1",
+          openapiUrl: "/v1/openapi.json",
+          authentication: {
+            type: "apiKey",
+            supportedHeaders: ["x-api-key", "authorization"],
+            authorizationFormat: "Bearer <api-key>",
+          },
+          resources: [],
+        },
+      });
+    },
+  });
+
+  const info = await client.getInfo({
+    maxRateLimitRetries: 1,
+    timeoutMs: 3000,
+  });
+
+  assert.equal(info.version, "v1");
+  assert.equal(info.openapiUrl, "/v1/openapi.json");
+  assert.equal(calls, 2);
+  assert.equal(callTimes.length, 2);
+  assert.equal(callTimes[1] - callTimes[0] >= 900, true);
 });
 
 test("Client stops retrying 429 responses after maxRateLimitRetries", async () => {
@@ -698,11 +748,7 @@ test("Client rate-limits request starts per instance", async () => {
     },
   });
 
-  await Promise.all([
-    client.getInfo(),
-    client.getInfo(),
-    client.getInfo(),
-  ]);
+  await Promise.all([client.getInfo(), client.getInfo(), client.getInfo()]);
 
   assert.equal(starts.length, 3);
   assert.equal(starts[1] - starts[0] >= 150, true);
