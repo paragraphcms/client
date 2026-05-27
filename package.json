@@ -1,6 +1,6 @@
 {
   "name": "@paragraphcms/client",
-  "version": "3.0.0",
+  "version": "3.0.5",
   "description": "Official TypeScript client for the Paragraph CMS API.",
   "license": "MIT",
   "author": "Paragraph CMS",

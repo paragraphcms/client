@@ -206,21 +206,43 @@ export function assertApiInfo(info) {
   assert.equal(Array.isArray(info.resources), true);
 }
 
-export async function cleanupIgnoringNotFound(run) {
-  try {
-    await run();
-  } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      "status" in error &&
-      error.status === 404
-    ) {
-      return;
-    }
+export async function expectOk(run) {
+  const result = await run;
 
-    throw error;
+  if (result.error !== null) {
+    assert.fail(`expected success result, received: ${result.error.message}`);
   }
+
+  return result.data;
+}
+
+export async function expectError(run) {
+  const result = await run;
+
+  if (result.error === null) {
+    assert.fail("expected error result");
+  }
+
+  return result.error;
+}
+
+export async function cleanupIgnoringNotFound(run) {
+  const result = await run();
+
+  if (result.error === null) {
+    return result.data;
+  }
+
+  if (
+    result.error &&
+    typeof result.error === "object" &&
+    "status" in result.error &&
+    result.error.status === 404
+  ) {
+    return;
+  }
+
+  throw result.error;
 }
 
 function assertPageContent(content) {

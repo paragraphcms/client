@@ -7,6 +7,7 @@ import ky, {
 import {
   ParagraphApiError,
   ParagraphClientError,
+  type ParagraphError,
 } from "./errors.js";
 import { RequestRateLimiter } from "./rate-limiter.js";
 import type {
@@ -15,6 +16,7 @@ import type {
   AiMetaNameResult,
   ApiErrorPayload,
   ApiInfo,
+  ClientResult,
   ClientOptions,
   Collection,
   CollectionListQuery,
@@ -49,8 +51,11 @@ import type {
   Member,
   MemberListQuery,
   Page,
+  PageListItem,
   PageListQuery,
   PageSummary,
+  PageSummaryWithSlug,
+  PageWithSlug,
   PageMutationResult,
   PageRestoreResult,
   PermanentDeleteResult,
@@ -84,35 +89,15 @@ type DataEnvelope<T> = {
 
 const API_BASE_URL = "https://api.paragraphcms.com/v1";
 const DEFAULT_REQUESTS_PER_SECOND = 5;
-const DEFAULT_RATE_LIMIT_RETRIES = 3;
+const DEFAULT_RATE_LIMIT_RETRIES = 5;
 const LOOKUP_PAGE_SIZE = 100;
-const PRESERVED_TRANSFORM_KEYS = new Set([
-  "content",
-  "editorNode",
-  "fields",
-]);
-const RETRYABLE_METHODS = [
-  "get",
-  "post",
-  "patch",
-  "delete",
-] as const;
-const SAFE_TRANSIENT_RETRY_METHODS = new Set([
-  "GET",
-  "DELETE",
-]);
-const RETRYABLE_STATUS_CODES = [
-  429,
-  500,
-  502,
-  503,
-  504,
-];
+const PRESERVED_TRANSFORM_KEYS = new Set(["content", "editorNode", "fields"]);
+const RETRYABLE_METHODS = ["get", "post", "patch", "delete"] as const;
+const SAFE_TRANSIENT_RETRY_METHODS = new Set(["GET", "DELETE"]);
+const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504];
 const RETRY_AFTER_STATUS_CODES = [429, 503];
 
-function resolveFetchImplementation(
-  customFetch: FetchLike | undefined,
-) {
+function resolveFetchImplementation(customFetch: FetchLike | undefined) {
   const fetchImpl = customFetch ?? globalThis.fetch;
 
   if (typeof fetchImpl !== "function") {
@@ -166,10 +151,7 @@ function transformKeysDeep(
       continue;
     }
 
-    transformed[transformedKey] = transformKeysDeep(
-      nestedValue,
-      transformKey,
-    );
+    transformed[transformedKey] = transformKeysDeep(nestedValue, transformKey);
   }
 
   return transformed;
@@ -183,10 +165,7 @@ function toSdkPayload<T>(value: T) {
   return transformKeysDeep(value, toCamelCaseKey) as T;
 }
 
-function buildUrl(
-  path: string,
-  query?: object,
-) {
+function buildUrl(path: string, query?: object) {
   const normalizedPath = path ? `/${path.replace(/^\/+/, "")}` : "";
   const url = new URL(`${API_BASE_URL}${normalizedPath}`);
   const apiQuery = query
@@ -194,9 +173,7 @@ function buildUrl(
     : undefined;
 
   if (apiQuery) {
-    for (const [key, rawValue] of Object.entries(
-      apiQuery,
-    )) {
+    for (const [key, rawValue] of Object.entries(apiQuery)) {
       if (rawValue === undefined || rawValue === null) {
         continue;
       }
@@ -268,9 +245,7 @@ function createRequestDescriptor(
 }
 
 function toKyInput(url: URL) {
-  const path = url.pathname
-    .replace(/^\/v1/, "")
-    .replace(/^\/+/, "");
+  const path = url.pathname.replace(/^\/v1/, "").replace(/^\/+/, "");
 
   return `${path}${url.search}`;
 }
@@ -284,8 +259,7 @@ function canRetryTransientRequest(method: string | undefined) {
 
 function isAbortError(error: unknown) {
   return (
-    (error instanceof DOMException &&
-      error.name === "AbortError") ||
+    (error instanceof DOMException && error.name === "AbortError") ||
     (error instanceof Error && error.name === "AbortError")
   );
 }
@@ -296,10 +270,7 @@ function resolveMaxRateLimitRetries(
 ) {
   const resolved = value ?? fallback;
 
-  if (
-    !Number.isInteger(resolved) ||
-    resolved < 0
-  ) {
+  if (!Number.isInteger(resolved) || resolved < 0) {
     throw new ParagraphClientError(
       "`maxRateLimitRetries` must be a non-negative integer.",
     );
@@ -308,9 +279,7 @@ function resolveMaxRateLimitRetries(
   return resolved;
 }
 
-function resolveTotalTimeout(
-  timeoutMs: number | undefined,
-) {
+function resolveTotalTimeout(timeoutMs: number | undefined) {
   return timeoutMs && timeoutMs > 0 ? timeoutMs : false;
 }
 
@@ -323,9 +292,7 @@ function createRetryOptions(limit: number) {
     retryOnTimeout: false,
     shouldRetry: ({ error }: ShouldRetryState) => {
       if (error instanceof HTTPError) {
-        return canRetryTransientRequest(
-          error.request.method,
-        )
+        return canRetryTransientRequest(error.request.method)
           ? undefined
           : false;
       }
@@ -393,10 +360,7 @@ function buildUploadFilePart(input: UploadMediaRequest) {
 
   if (typeof File !== "undefined") {
     if (source.value instanceof File) {
-      if (
-        source.value.name === fileName &&
-        source.value.type === contentType
-      ) {
+      if (source.value.name === fileName && source.value.type === contentType) {
         return {
           value: source.value,
           fileName: undefined,
@@ -455,463 +419,461 @@ export class Client {
   private readonly maxRateLimitRetries: number;
 
   readonly pages = {
-    list: (query?: PageListQuery, options?: RequestOptions) =>
-      this.listPages(query, options),
-    create: (
-      body: CreatePageRequest = {},
+    list: <TQuery extends PageListQuery | undefined = undefined>(
+      query?: TQuery,
       options?: RequestOptions,
     ) =>
-      this.requestData<PageMutationResult>("POST", "/pages", {
-        body,
-        options,
-      }),
-    get: (
-      pageId: string,
-      query?: GetPageQuery,
-      options?: RequestOptions,
-    ) =>
-      this.requestData<Page>("GET", `/pages/${pageId}`, {
-        query,
-        options,
-      }),
+      this.execute(() => this.listPages(query, options)),
+    create: (body: CreatePageRequest = {}, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<PageMutationResult>("POST", "/pages", {
+          body,
+          options,
+        }),
+      ),
+    get: (pageId: string, query?: GetPageQuery, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<Page>("GET", `/pages/${pageId}`, {
+          query,
+          options,
+        }),
+      ),
     getBySlug: (slug: string, options?: RequestOptions) =>
-      this.getPageBySlug(slug, options),
+      this.execute(() => this.getPageBySlug(slug, options)),
     update: (
       pageId: string,
       body: UpdatePageRequest,
       options?: RequestOptions,
     ) =>
-      this.requestData<PageMutationResult>("PATCH", `/pages/${pageId}`, {
-        body,
-        options,
-      }),
-    delete: (pageId: string, options?: RequestOptions) =>
-      this.requestData<DeleteResult>("DELETE", `/pages/${pageId}`, {
-        options,
-      }),
-    restore: (pageId: string, options?: RequestOptions) =>
-      this.requestData<PageRestoreResult>(
-        "POST",
-        `/pages/${pageId}/restore`,
-        {
+      this.execute(() =>
+        this.requestData<PageMutationResult>("PATCH", `/pages/${pageId}`, {
+          body,
           options,
-        },
+        }),
       ),
-    permanentlyDelete: (
-      pageId: string,
-      options?: RequestOptions,
-    ) =>
-      this.requestData<PermanentDeleteResult>(
-        "DELETE",
-        `/pages/${pageId}/permanent`,
-        {
+    delete: (pageId: string, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<DeleteResult>("DELETE", `/pages/${pageId}`, {
           options,
-        },
+        }),
+      ),
+    restore: (pageId: string, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<PageRestoreResult>("POST", `/pages/${pageId}/restore`, {
+          options,
+        }),
+      ),
+    permanentlyDelete: (pageId: string, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<PermanentDeleteResult>(
+          "DELETE",
+          `/pages/${pageId}/permanent`,
+          {
+            options,
+          },
+        ),
       ),
     duplicate: (pageId: string, options?: RequestOptions) =>
-      this.requestData<PageMutationResult>(
-        "POST",
-        `/pages/${pageId}/duplicate`,
-        {
-          options,
-        },
+      this.execute(() =>
+        this.requestData<PageMutationResult>(
+          "POST",
+          `/pages/${pageId}/duplicate`,
+          {
+            options,
+          },
+        ),
       ),
     createTranslation: (
       pageId: string,
       body: CreatePageTranslationRequest,
       options?: RequestOptions,
     ) =>
-      this.requestData<PageMutationResult>(
-        "POST",
-        `/pages/${pageId}/translations`,
-        {
-          body,
-          options,
-        },
+      this.execute(() =>
+        this.requestData<PageMutationResult>(
+          "POST",
+          `/pages/${pageId}/translations`,
+          {
+            body,
+            options,
+          },
+        ),
       ),
   };
 
   readonly page = {
-    list: (query?: PageListQuery, options?: RequestOptions) =>
-      this.pages.list(query, options),
-    get: (
-      pageId: string,
-      query?: GetPageQuery,
-      options?: RequestOptions,
-    ) => this.pages.get(pageId, query, options),
+    get: (pageId: string, query?: GetPageQuery, options?: RequestOptions) =>
+      this.pages.get(pageId, query, options),
     getBySlug: (slug: string, options?: RequestOptions) =>
       this.pages.getBySlug(slug, options),
   };
 
   readonly collections = {
     list: (query?: CollectionListQuery, options?: RequestOptions) =>
-      this.requestList<Collection>("GET", "/collections", {
-        query,
-        options,
-      }),
-    create: (
-      body: CreateCollectionRequest,
-      options?: RequestOptions,
-    ) =>
-      this.requestData<CollectionMutationResult>(
-        "POST",
-        "/collections",
-        {
+      this.execute(() =>
+        this.requestList<Collection>("GET", "/collections", {
+          query,
+          options,
+        }),
+      ),
+    create: (body: CreateCollectionRequest, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<CollectionMutationResult>("POST", "/collections", {
           body,
           options,
-        },
+        }),
       ),
     get: (collectionId: string, options?: RequestOptions) =>
-      this.requestData<Collection>(
-        "GET",
-        `/collections/${collectionId}`,
-        {
+      this.execute(() =>
+        this.requestData<Collection>("GET", `/collections/${collectionId}`, {
           options,
-        },
+        }),
       ),
     update: (
       collectionId: string,
       body: UpdateCollectionRequest,
       options?: RequestOptions,
     ) =>
-      this.requestData<CollectionMutationResult>(
-        "PATCH",
-        `/collections/${collectionId}`,
-        {
-          body,
-          options,
-        },
+      this.execute(() =>
+        this.requestData<CollectionMutationResult>(
+          "PATCH",
+          `/collections/${collectionId}`,
+          {
+            body,
+            options,
+          },
+        ),
       ),
     delete: (collectionId: string, options?: RequestOptions) =>
-      this.requestData<DeleteResult>(
-        "DELETE",
-        `/collections/${collectionId}`,
-        {
+      this.execute(() =>
+        this.requestData<DeleteResult>("DELETE", `/collections/${collectionId}`, {
           options,
-        },
+        }),
       ),
   };
 
   readonly media = {
     list: (query?: MediaListQuery, options?: RequestOptions) =>
-      this.requestList<Media>("GET", "/media", {
-        query,
-        options,
-      }),
+      this.execute(() =>
+        this.requestList<Media>("GET", "/media", {
+          query,
+          options,
+        }),
+      ),
     upload: (body: UploadMediaRequest, options?: RequestOptions) =>
-      this.requestData<MediaUploadResult>("POST", "/media", {
-        formData: createUploadFormData(body),
-        options,
-      }),
+      this.execute(() =>
+        this.requestData<MediaUploadResult>("POST", "/media", {
+          formData: createUploadFormData(body),
+          options,
+        }),
+      ),
     get: (mediaId: string, options?: RequestOptions) =>
-      this.requestData<MediaDetail>("GET", `/media/${mediaId}`, {
-        options,
-      }),
+      this.execute(() =>
+        this.requestData<MediaDetail>("GET", `/media/${mediaId}`, {
+          options,
+        }),
+      ),
     update: (
       mediaId: string,
       body: UpdateMediaRequest,
       options?: RequestOptions,
     ) =>
-      this.requestData<MediaMutationResult>(
-        "PATCH",
-        `/media/${mediaId}`,
-        {
+      this.execute(() =>
+        this.requestData<MediaMutationResult>("PATCH", `/media/${mediaId}`, {
           body,
           options,
-        },
+        }),
       ),
     delete: (mediaId: string, options?: RequestOptions) =>
-      this.requestData<MediaDeleteResult>(
-        "DELETE",
-        `/media/${mediaId}`,
-        {
+      this.execute(() =>
+        this.requestData<MediaDeleteResult>("DELETE", `/media/${mediaId}`, {
           options,
-        },
+        }),
       ),
   };
 
   readonly members = {
     list: (query?: MemberListQuery, options?: RequestOptions) =>
-      this.requestList<Member>("GET", "/members", {
-        query,
-        options,
-      }),
+      this.execute(() =>
+        this.requestList<Member>("GET", "/members", {
+          query,
+          options,
+        }),
+      ),
     get: (memberId: string, options?: RequestOptions) =>
-      this.findListItem<Member>(
-        "/members",
-        (member) => member.id === memberId,
-        options,
-        {
-          code: "memberNotFound",
-          message: "Member not found.",
-          details: { memberId },
-        },
+      this.execute(() =>
+        this.findListItem<Member>(
+          "/members",
+          (member) => member.id === memberId,
+          options,
+          {
+            code: "memberNotFound",
+            message: "Member not found.",
+            details: { memberId },
+          },
+        ),
       ),
   };
 
   readonly authors = {
     list: (query?: MemberListQuery, options?: RequestOptions) =>
-      this.requestList<Member>("GET", "/authors", {
-        query,
-        options,
-      }),
+      this.execute(() =>
+        this.requestList<Member>("GET", "/authors", {
+          query,
+          options,
+        }),
+      ),
     get: (authorId: string, options?: RequestOptions) =>
-      this.findListItem<Member>(
-        "/authors",
-        (author) => author.id === authorId,
-        options,
-        {
-          code: "authorNotFound",
-          message: "Author not found.",
-          details: { authorId },
-        },
+      this.execute(() =>
+        this.findListItem<Member>(
+          "/authors",
+          (author) => author.id === authorId,
+          options,
+          {
+            code: "authorNotFound",
+            message: "Author not found.",
+            details: { authorId },
+          },
+        ),
       ),
   };
 
   readonly reviewers = {
     list: (query?: MemberListQuery, options?: RequestOptions) =>
-      this.requestList<Member>("GET", "/reviewers", {
-        query,
-        options,
-      }),
+      this.execute(() =>
+        this.requestList<Member>("GET", "/reviewers", {
+          query,
+          options,
+        }),
+      ),
     get: (reviewerId: string, options?: RequestOptions) =>
-      this.findListItem<Member>(
-        "/reviewers",
-        (reviewer) => reviewer.id === reviewerId,
-        options,
-        {
-          code: "reviewerNotFound",
-          message: "Reviewer not found.",
-          details: { reviewerId },
-        },
+      this.execute(() =>
+        this.findListItem<Member>(
+          "/reviewers",
+          (reviewer) => reviewer.id === reviewerId,
+          options,
+          {
+            code: "reviewerNotFound",
+            message: "Reviewer not found.",
+            details: { reviewerId },
+          },
+        ),
       ),
   };
 
   readonly statuses = {
     list: (query?: StatusListQuery, options?: RequestOptions) =>
-      this.requestList<Status>("GET", "/statuses", {
-        query,
-        options,
-      }),
-    create: (
-      body: CreateStatusRequest,
-      options?: RequestOptions,
-    ) =>
-      this.requestData<StatusMutationResult>("POST", "/statuses", {
-        body,
-        options,
-      }),
+      this.execute(() =>
+        this.requestList<Status>("GET", "/statuses", {
+          query,
+          options,
+        }),
+      ),
+    create: (body: CreateStatusRequest, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<StatusMutationResult>("POST", "/statuses", {
+          body,
+          options,
+        }),
+      ),
     get: (statusId: string, options?: RequestOptions) =>
-      this.requestData<Status>("GET", `/statuses/${statusId}`, {
-        options,
-      }),
+      this.execute(() =>
+        this.requestData<Status>("GET", `/statuses/${statusId}`, {
+          options,
+        }),
+      ),
     update: (
       statusId: string,
       body: UpdateStatusRequest,
       options?: RequestOptions,
     ) =>
-      this.requestData<StatusMutationResult>(
-        "PATCH",
-        `/statuses/${statusId}`,
-        {
+      this.execute(() =>
+        this.requestData<StatusMutationResult>("PATCH", `/statuses/${statusId}`, {
           body,
           options,
-        },
+        }),
       ),
-    reorder: (
-      body: ReorderStatusesRequest,
-      options?: RequestOptions,
-    ) =>
-      this.requestData<ReorderResult>(
-        "POST",
-        "/statuses/reorder",
-        {
+    reorder: (body: ReorderStatusesRequest, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<ReorderResult>("POST", "/statuses/reorder", {
           body,
           options,
-        },
+        }),
       ),
     delete: (statusId: string, options?: RequestOptions) =>
-      this.requestData<DeleteResult>(
-        "DELETE",
-        `/statuses/${statusId}`,
-        {
+      this.execute(() =>
+        this.requestData<DeleteResult>("DELETE", `/statuses/${statusId}`, {
           options,
-        },
+        }),
       ),
   };
 
   readonly labels = {
     list: (query?: LabelListQuery, options?: RequestOptions) =>
-      this.requestList<Label>("GET", "/labels", {
-        query,
-        options,
-      }),
-    create: (
-      body: CreateLabelRequest,
-      options?: RequestOptions,
-    ) =>
-      this.requestData<LabelMutationResult>("POST", "/labels", {
-        body,
-        options,
-      }),
+      this.execute(() =>
+        this.requestList<Label>("GET", "/labels", {
+          query,
+          options,
+        }),
+      ),
+    create: (body: CreateLabelRequest, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<LabelMutationResult>("POST", "/labels", {
+          body,
+          options,
+        }),
+      ),
     get: (labelId: string, options?: RequestOptions) =>
-      this.requestData<Label>("GET", `/labels/${labelId}`, {
-        options,
-      }),
+      this.execute(() =>
+        this.requestData<Label>("GET", `/labels/${labelId}`, {
+          options,
+        }),
+      ),
     update: (
       labelId: string,
       body: UpdateLabelRequest,
       options?: RequestOptions,
     ) =>
-      this.requestData<LabelMutationResult>(
-        "PATCH",
-        `/labels/${labelId}`,
-        {
+      this.execute(() =>
+        this.requestData<LabelMutationResult>("PATCH", `/labels/${labelId}`, {
           body,
           options,
-        },
+        }),
       ),
-    reorder: (
-      body: ReorderLabelsRequest,
-      options?: RequestOptions,
-    ) =>
-      this.requestData<ReorderResult>("POST", "/labels/reorder", {
-        body,
-        options,
-      }),
+    reorder: (body: ReorderLabelsRequest, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<ReorderResult>("POST", "/labels/reorder", {
+          body,
+          options,
+        }),
+      ),
     delete: (labelId: string, options?: RequestOptions) =>
-      this.requestData<DeleteResult>("DELETE", `/labels/${labelId}`, {
-        options,
-      }),
+      this.execute(() =>
+        this.requestData<DeleteResult>("DELETE", `/labels/${labelId}`, {
+          options,
+        }),
+      ),
   };
 
   readonly dataModels = {
     list: (query?: DataModelListQuery, options?: RequestOptions) =>
-      this.requestList<DataModel>("GET", "/data-models", {
-        query,
-        options,
-      }),
-    create: (
-      body: CreateDataModelRequest,
-      options?: RequestOptions,
-    ) =>
-      this.requestData<DataModelMutationResult>(
-        "POST",
-        "/data-models",
-        {
+      this.execute(() =>
+        this.requestList<DataModel>("GET", "/data-models", {
+          query,
+          options,
+        }),
+      ),
+    create: (body: CreateDataModelRequest, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<DataModelMutationResult>("POST", "/data-models", {
           body,
           options,
-        },
+        }),
       ),
     get: (dataModelId: string, options?: RequestOptions) =>
-      this.requestData<DataModel>(
-        "GET",
-        `/data-models/${dataModelId}`,
-        {
+      this.execute(() =>
+        this.requestData<DataModel>("GET", `/data-models/${dataModelId}`, {
           options,
-        },
+        }),
       ),
     update: (
       dataModelId: string,
       body: UpdateDataModelRequest,
       options?: RequestOptions,
     ) =>
-      this.requestData<DataModelMutationResult>(
-        "PATCH",
-        `/data-models/${dataModelId}`,
-        {
-          body,
-          options,
-        },
+      this.execute(() =>
+        this.requestData<DataModelMutationResult>(
+          "PATCH",
+          `/data-models/${dataModelId}`,
+          {
+            body,
+            options,
+          },
+        ),
       ),
     delete: (dataModelId: string, options?: RequestOptions) =>
-      this.requestData<DeleteResult>(
-        "DELETE",
-        `/data-models/${dataModelId}`,
-        {
+      this.execute(() =>
+        this.requestData<DeleteResult>("DELETE", `/data-models/${dataModelId}`, {
           options,
-        },
+        }),
       ),
   };
 
   readonly locales = {
     list: (options?: RequestOptions) =>
-      this.requestData<Locale[]>("GET", "/locales", {
-        options,
-      }),
-    getDefaultLocale: async (options?: RequestOptions) => {
-      const response = await this.requestData<{ defaultLocale: string }>(
-        "GET",
-        "/locales/default",
-        {
+      this.execute(() =>
+        this.requestData<Locale[]>("GET", "/locales", {
           options,
-        },
-      );
-
-      return response.defaultLocale;
-    },
-    get: (code: string, options?: RequestOptions) =>
-      this.findArrayItem<Locale>(
-        "/locales",
-        (locale) => locale.code === code,
-        options,
-        {
-          code: "localeNotFound",
-          message: "Locale not found.",
-          details: { code },
-        },
+        }),
       ),
-    create: (
-      body: CreateLocaleRequest,
-      options?: RequestOptions,
-    ) =>
-      this.requestData<LocaleMutationResult>("POST", "/locales", {
-        body,
-        options,
+    getDefaultLocale: (options?: RequestOptions) =>
+      this.execute(async () => {
+        const response = await this.requestData<{ defaultLocale: string }>(
+          "GET",
+          "/locales/default",
+          {
+            options,
+          },
+        );
+
+        return response.defaultLocale;
       }),
-    delete: (code: string, options?: RequestOptions) =>
-      this.requestData<DeleteByCodeResult>(
-        "DELETE",
-        `/locales/${code}`,
-        {
+    get: (code: string, options?: RequestOptions) =>
+      this.execute(() =>
+        this.findArrayItem<Locale>(
+          "/locales",
+          (locale) => locale.code === code,
           options,
-        },
+          {
+            code: "localeNotFound",
+            message: "Locale not found.",
+            details: { code },
+          },
+        ),
+      ),
+    create: (body: CreateLocaleRequest, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<LocaleMutationResult>("POST", "/locales", {
+          body,
+          options,
+        }),
+      ),
+    delete: (code: string, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<DeleteByCodeResult>("DELETE", `/locales/${code}`, {
+          options,
+        }),
       ),
   };
 
   readonly ai = {
-    generateMetaName: (
-      body: GenerateMetaRequest,
-      options?: RequestOptions,
-    ) =>
-      this.requestData<AiMetaNameResult>(
-        "POST",
-        "/ai/meta-name",
-        {
+    generateMetaName: (body: GenerateMetaRequest, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<AiMetaNameResult>("POST", "/ai/meta-name", {
           body,
           options,
-        },
+        }),
       ),
     generateMetaDescription: (
       body: GenerateMetaRequest,
       options?: RequestOptions,
     ) =>
-      this.requestData<AiMetaDescriptionResult>(
-        "POST",
-        "/ai/meta-description",
-        {
+      this.execute(() =>
+        this.requestData<AiMetaDescriptionResult>(
+          "POST",
+          "/ai/meta-description",
+          {
+            body,
+            options,
+          },
+        ),
+      ),
+    generateContent: (body: GenerateContentRequest, options?: RequestOptions) =>
+      this.execute(() =>
+        this.requestData<AiContentResult>("POST", "/ai/content", {
           body,
           options,
-        },
+        }),
       ),
-    generateContent: (
-      body: GenerateContentRequest,
-      options?: RequestOptions,
-    ) =>
-      this.requestData<AiContentResult>("POST", "/ai/content", {
-        body,
-        options,
-      }),
   };
 
   constructor(options: ClientOptions) {
@@ -924,10 +886,7 @@ export class Client {
       );
     }
 
-    if (
-      typeof options.apiKey !== "string" ||
-      !options.apiKey.trim()
-    ) {
+    if (typeof options.apiKey !== "string" || !options.apiKey.trim()) {
       throw new ParagraphClientError("`apiKey` is required.");
     }
 
@@ -942,21 +901,20 @@ export class Client {
       options.maxRequestsPerSecond ?? DEFAULT_REQUESTS_PER_SECOND,
     );
     this.http = ky.create({
-      fetch: (input, init) =>
-        limiter.schedule(() => fetchImpl(input, init)),
+      fetch: (input, init) => limiter.schedule(() => fetchImpl(input, init)),
       prefix: API_BASE_URL,
       timeout: false,
     });
   }
 
   getInfo(options?: RequestOptions) {
-    return this.requestData<ApiInfo>("GET", "", { options });
+    return this.execute(() => this.requestData<ApiInfo>("GET", "", { options }));
   }
 
-  private async listPages(
-    query?: PageListQuery,
+  private async listPages<TQuery extends PageListQuery | undefined>(
+    query?: TQuery,
     options?: RequestOptions,
-  ) {
+  ): Promise<ListResponse<PageListItem<TQuery>>> {
     const pageListQuery = this.createPageListQuery(query, {
       defaultHasPublished: true,
     });
@@ -970,7 +928,7 @@ export class Client {
       pageListQuery.page !== undefined ||
       !response.meta.hasNextPage
     ) {
-      return response;
+      return response as ListResponse<PageListItem<TQuery>>;
     }
 
     const items = [...response.data];
@@ -978,14 +936,18 @@ export class Client {
     let lastMeta = response.meta;
 
     while (lastMeta.hasNextPage) {
-      const nextResponse = await this.requestList<PageSummary>("GET", "/pages", {
-        query: {
-          ...pageListQuery,
-          page: nextPage,
-          limit: lastMeta.limit,
+      const nextResponse = await this.requestList<PageSummary>(
+        "GET",
+        "/pages",
+        {
+          query: {
+            ...pageListQuery,
+            page: nextPage,
+            limit: lastMeta.limit,
+          },
+          options,
         },
-        options,
-      });
+      );
 
       items.push(...nextResponse.data);
       lastMeta = nextResponse.meta;
@@ -1002,7 +964,7 @@ export class Client {
         hasNextPage: false,
         hasPrevPage: false,
       },
-    };
+    } as ListResponse<PageListItem<TQuery>>;
   }
 
   private createPageListQuery(
@@ -1011,12 +973,7 @@ export class Client {
       defaultHasPublished?: boolean;
     },
   ): PageListQuery {
-    const {
-      requiredSlug,
-      hasPublished,
-      published,
-      ...restQuery
-    } = query ?? {};
+    const { requiredSlug, hasPublished, published, ...restQuery } = query ?? {};
     const resolvedPublished =
       hasPublished ??
       published ??
@@ -1058,12 +1015,28 @@ export class Client {
     return this.requestJson<ListResponse<T>>(method, path, config);
   }
 
+  private async execute<T>(
+    run: () => Promise<T>,
+  ): Promise<ClientResult<T, ParagraphError>> {
+    try {
+      return {
+        data: await run(),
+        error: null,
+      };
+    } catch (error) {
+      return {
+        data: null,
+        error: this.normalizeError(error),
+      };
+    }
+  }
+
   private async getPageBySlug(
     slug: string,
     options?: RequestOptions,
-  ) {
-    const query = this.createPageListQuery({ slug });
-    const page = await this.findListItem<PageSummary>(
+  ): Promise<PageWithSlug> {
+    const query = this.createPageListQuery({ slug, requiredSlug: true });
+    const page = await this.findListItem<PageSummaryWithSlug>(
       "/pages",
       (item) => item.slug === slug,
       options,
@@ -1075,7 +1048,24 @@ export class Client {
       query,
     );
 
-    return this.pages.get(page.id, undefined, options);
+    const resolvedPage = await this.requestData<Page>("GET", `/pages/${page.id}`, {
+      options,
+    });
+
+    return this.requirePageWithSlug(resolvedPage, slug);
+  }
+
+  private requirePageWithSlug(
+    page: Page,
+    expectedSlug: string,
+  ): PageWithSlug {
+    if (page.slug === null || page.slug !== expectedSlug) {
+      throw new ParagraphClientError(
+        `Page fetched by slug returned inconsistent slug data for "${expectedSlug}".`,
+      );
+    }
+
+    return page as PageWithSlug;
   }
 
   private async findListItem<T>(
@@ -1166,11 +1156,24 @@ export class Client {
       code: config.code,
       message: config.message,
       details: config.details,
-      request: createRequestDescriptor(
-        method,
-        buildUrl(path, config.query),
-      ),
+      request: createRequestDescriptor(method, buildUrl(path, config.query)),
     });
+  }
+
+  private normalizeError(error: unknown): ParagraphError {
+    if (
+      error instanceof ParagraphApiError ||
+      error instanceof ParagraphClientError
+    ) {
+      return error;
+    }
+
+    return new ParagraphClientError(
+      error instanceof Error && error.message ? error.message : "Request failed.",
+      {
+        cause: error,
+      },
+    );
   }
 
   private requestJson<T>(
@@ -1187,8 +1190,7 @@ export class Client {
     const kyInput = toKyInput(url);
     const request = createRequestDescriptor(method, url);
     const headers = new Headers(this.defaultHeaders);
-    const timeoutMs =
-      config?.options?.timeoutMs ?? this.timeoutMs;
+    const timeoutMs = config?.options?.timeoutMs ?? this.timeoutMs;
     const maxRateLimitRetries = resolveMaxRateLimitRetries(
       config?.options?.maxRateLimitRetries,
       this.maxRateLimitRetries,
@@ -1196,10 +1198,7 @@ export class Client {
 
     headers.set("accept", "application/json");
 
-    if (
-      !headers.has("x-api-key") &&
-      !headers.has("authorization")
-    ) {
+    if (!headers.has("x-api-key") && !headers.has("authorization")) {
       headers.set("x-api-key", this.apiKey);
     }
 
@@ -1242,9 +1241,7 @@ export class Client {
         return toSdkPayload(payload) as T;
       } catch (error) {
         if (error instanceof HTTPError) {
-          const responseHeaders = new Headers(
-            error.response.headers,
-          );
+          const responseHeaders = new Headers(error.response.headers);
           const payload = error.data;
 
           throw isApiErrorPayload(payload)
@@ -1266,8 +1263,7 @@ export class Client {
                 message:
                   typeof payload === "string" && payload.length > 0
                     ? payload
-                    : error.response.statusText ||
-                      "Request failed.",
+                    : error.response.statusText || "Request failed.",
                 headers: responseHeaders,
                 request,
               });
@@ -1283,11 +1279,11 @@ export class Client {
           );
         }
 
-        if (
-          isAbortError(error) ||
-          config?.options?.signal?.aborted
-        ) {
-          throw error;
+        if (isAbortError(error) || config?.options?.signal?.aborted) {
+          throw new ParagraphClientError("Request aborted.", {
+            request,
+            cause: error,
+          });
         }
 
         throw new ParagraphClientError("Request failed.", {

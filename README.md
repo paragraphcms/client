@@ -36,50 +36,92 @@ const client = new Client({
 });
 ```
 
+Every client method returns a non-throwing result object:
+
+```ts
+const { data, error } = await client.page.getBySlug("pricing");
+
+if (error) {
+  console.error(error.message);
+  return;
+}
+
+console.log(data.title);
+```
+
+On success, `error` is `null`. On failure, `data` is `null` and `error` is a `ParagraphApiError` or `ParagraphClientError`.
+
 ### Get Published Pages or Pages From a Collection
 
 ```ts
-const { data: publishedPages, meta } = await client.pages.list();
+const { data: publishedPagesResult, error: publishedPagesError } =
+  await client.pages.list();
 
-const { data: allPages } = await client.pages.list({
+const { data: allPagesResult, error: allPagesError } = await client.pages.list({
   published: false,
 });
 
-const { data: collectionPages } = await client.pages.list({
+const { data: collectionPagesResult, error: collectionPagesError } =
+  await client.pages.list({
   collection: "Blog",
 });
 
-const { data: collectionPagesById } = await client.pages.list({
+const { data: collectionPagesByIdResult, error: collectionPagesByIdError } =
+  await client.pages.list({
   collectionId: "collection-id",
 });
 
-const { data: pagesWithSlugs } = await client.page.list({
+const { data: pagesWithSlugsResult, error: pagesWithSlugsError } =
+  await client.pages.list({
   requiredSlug: true,
 });
 
-console.log(meta.totalItems);
-console.log(publishedPages.map((page) => page.title));
-console.log(allPages.map((page) => page.title));
-console.log(collectionPages.map((page) => page.title));
-console.log(collectionPagesById.map((page) => page.title));
-console.log(pagesWithSlugs.map((page) => page.slug));
+if (
+  publishedPagesError ||
+  allPagesError ||
+  collectionPagesError ||
+  collectionPagesByIdError ||
+  pagesWithSlugsError
+) {
+  console.error("Request failed.");
+  return;
+}
+
+console.log(publishedPagesResult.meta.totalItems);
+console.log(publishedPagesResult.data.map((page) => page.title));
+console.log(allPagesResult.data.map((page) => page.title));
+console.log(collectionPagesResult.data.map((page) => page.title));
+console.log(collectionPagesByIdResult.data.map((page) => page.title));
+console.log(pagesWithSlugsResult.data.map((page) => page.slug.toUpperCase()));
 ```
 
 `client.pages.list()` now returns only published pages by default. To include unpublished pages, pass `published: false`.
+Passing `requiredSlug: true` also narrows `page.slug` to `string` in TypeScript.
 
 ### Get a Page by Slug
 
 ```ts
-const page = await client.pages.getBySlug("pricing");
+const { data: page, error } = await client.page.getBySlug("pricing");
+
+if (error) {
+  console.error(error.message);
+  return;
+}
 
 console.log(page.id);
 console.log(page.title);
+console.log(page.slug.toUpperCase());
 ```
 
 ### Get All Supported Languages
 
 ```ts
-const locales = await client.locales.list();
+const { data: locales, error } = await client.locales.list();
+
+if (error) {
+  console.error(error.message);
+  return;
+}
 
 console.log(locales.map((locale) => locale.code));
 ```

@@ -16,6 +16,7 @@ import {
   assertPageSummary,
   assertStatus,
   cleanupIgnoringNotFound,
+  expectOk,
   makePrefix,
   makeTinyPngBytes,
 } from "./_helpers.mjs";
@@ -92,12 +93,12 @@ test(
     await t.test(
       "root info and member aliases return valid envelopes",
       async () => {
-        const info = await client.getInfo();
+        const info = await expectOk(client.getInfo());
         assertApiInfo(info);
 
-        const members = await client.members.list({ limit: 5 });
-        const authors = await client.authors.list({ limit: 5 });
-        const reviewers = await client.reviewers.list({ limit: 5 });
+        const members = await expectOk(client.members.list({ limit: 5 }));
+        const authors = await expectOk(client.authors.list({ limit: 5 }));
+        const reviewers = await expectOk(client.reviewers.list({ limit: 5 }));
 
         assertListResponse(members, assertMember);
         assertListResponse(authors, assertMember);
@@ -106,43 +107,43 @@ test(
     );
 
     await t.test("statuses CRUD and reorder works", async () => {
-      const first = await client.statuses.create({
+      const first = await expectOk(client.statuses.create({
         name: `${prefix}-draft-a`,
         color: "#111111",
         type: "draft",
         description: "integration test status A",
-      });
-      const second = await client.statuses.create({
+      }));
+      const second = await expectOk(client.statuses.create({
         name: `${prefix}-draft-b`,
         color: "#222222",
         type: "draft",
         description: "integration test status B",
-      });
+      }));
 
       created.draftStatusIds.push(first.status.id, second.status.id);
 
       assertStatus(first.status);
       assertStatus(second.status);
 
-      const updated = await client.statuses.update(first.status.id, {
+      const updated = await expectOk(client.statuses.update(first.status.id, {
         name: `${prefix}-draft-a-updated`,
         description: "updated description",
-      });
+      }));
 
       assert.equal(updated.status.name, `${prefix}-draft-a-updated`);
 
-      const reordered = await client.statuses.reorder({
+      const reordered = await expectOk(client.statuses.reorder({
         type: "draft",
         statusIds: [second.status.id, first.status.id],
-      });
+      }));
 
       assert.equal(reordered.reordered, true);
 
-      const listed = await client.statuses.list({
+      const listed = await expectOk(client.statuses.list({
         type: "draft",
         q: prefix,
         limit: 10,
-      });
+      }));
 
       assertListResponse(listed, assertStatus);
       const orderedIds = listed.data
@@ -156,36 +157,36 @@ test(
     });
 
     await t.test("labels CRUD and reorder works", async () => {
-      const first = await client.labels.create({
+      const first = await expectOk(client.labels.create({
         name: `${prefix}-label-a`,
         color: "#aa0000",
         description: "integration test label A",
-      });
-      const second = await client.labels.create({
+      }));
+      const second = await expectOk(client.labels.create({
         name: `${prefix}-label-b`,
         color: "#00aa00",
         description: "integration test label B",
-      });
+      }));
 
       created.labelIds.push(first.label.id, second.label.id);
 
       assertLabel(first.label);
       assertLabel(second.label);
 
-      const updated = await client.labels.update(first.label.id, {
+      const updated = await expectOk(client.labels.update(first.label.id, {
         name: `${prefix}-label-a-updated`,
-      });
+      }));
       assert.equal(updated.label.name, `${prefix}-label-a-updated`);
 
-      const reordered = await client.labels.reorder({
+      const reordered = await expectOk(client.labels.reorder({
         labelIds: [second.label.id, first.label.id],
-      });
+      }));
       assert.equal(reordered.reordered, true);
 
-      const listed = await client.labels.list({
+      const listed = await expectOk(client.labels.list({
         q: prefix,
         limit: 10,
-      });
+      }));
 
       assertListResponse(listed, assertLabel);
       const orderedIds = listed.data
@@ -199,7 +200,7 @@ test(
     });
 
     await t.test("data models and collections CRUD works", async () => {
-      const createdDataModel = await client.dataModels.create({
+      const createdDataModel = await expectOk(client.dataModels.create({
         name: `${prefix}-model`,
         description: "integration test data model",
         fields: [
@@ -214,12 +215,12 @@ test(
             type: "boolean",
           },
         ],
-      });
+      }));
 
       created.dataModelId = createdDataModel.dataModel.id;
       assertDataModel(createdDataModel.dataModel);
 
-      const updatedDataModel = await client.dataModels.update(
+      const updatedDataModel = await expectOk(client.dataModels.update(
         createdDataModel.dataModel.id,
         {
           description: "updated integration test data model",
@@ -231,45 +232,45 @@ test(
             },
           ],
         },
-      );
+      ));
       assert.equal(
         updatedDataModel.dataModel.description,
         "updated integration test data model",
       );
 
-      const dataModels = await client.dataModels.list({
+      const dataModels = await expectOk(client.dataModels.list({
         q: prefix,
         limit: 10,
-      });
+      }));
       assertListResponse(dataModels, assertDataModel);
 
-      const createdCollection = await client.collections.create({
+      const createdCollection = await expectOk(client.collections.create({
         name: `${prefix}-collection`,
         description: "integration test collection",
         defaultDataModelId: createdDataModel.dataModel.id,
         teamIds: [`${prefix}-team`],
-      });
+      }));
 
       created.collectionId = createdCollection.collection.id;
       assertCollection(createdCollection.collection);
 
-      const updatedCollection = await client.collections.update(
+      const updatedCollection = await expectOk(client.collections.update(
         createdCollection.collection.id,
         {
           name: `${prefix}-collection-updated`,
           description: "updated integration test collection",
         },
-      );
+      ));
 
       assert.equal(
         updatedCollection.collection.name,
         `${prefix}-collection-updated`,
       );
 
-      const collections = await client.collections.list({
+      const collections = await expectOk(client.collections.list({
         q: prefix,
         limit: 10,
-      });
+      }));
       assertListResponse(collections, assertCollection);
     });
 
@@ -277,28 +278,28 @@ test(
       "pages CRUD, duplication, translation, trash flow and media work",
       async () => {
         const localeCode = `${prefix.replace(/[^a-z0-9]/g, "").slice(0, 7)}x`;
-        const locale = await client.locales.create({
+        const locale = await expectOk(client.locales.create({
           code: localeCode,
           name: `${prefix} locale`,
-        });
+        }));
         created.localeCode = locale.locale.code;
         assertLocale(locale.locale);
 
-        const locales = await client.locales.list();
+        const locales = await expectOk(client.locales.list());
         assert.equal(Array.isArray(locales), true);
         assert.equal(
           locales.some((item) => item.code === localeCode),
           true,
         );
 
-        const defaultLocale = await client.locales.getDefaultLocale();
+        const defaultLocale = await expectOk(client.locales.getDefaultLocale());
         assert.equal(typeof defaultLocale, "string");
         assert.equal(
           locales.some((item) => item.code === defaultLocale),
           true,
         );
 
-        const pageResult = await client.pages.create({
+        const pageResult = await expectOk(client.pages.create({
           title: `${prefix} page`,
           language: "en",
           collectionId: created.collectionId,
@@ -321,13 +322,13 @@ test(
           slug: `${prefix}-page`,
           metaName: `${prefix} meta`,
           metaDescription: `${prefix} description`,
-        });
+        }));
 
         const pageId = pageResult.page.id;
         created.pageIds.push(pageId);
         assertPage(pageResult.page);
 
-        const listed = await client.pages.list({
+        const listed = await expectOk(client.pages.list({
           q: prefix,
           collection: `${prefix}-collection-updated`,
           published: false,
@@ -335,7 +336,7 @@ test(
           labelIds: created.labelIds,
           slug: `${prefix}-page`,
           limit: 10,
-        });
+        }));
 
         assertListResponse(listed, (page) =>
           assertPageSummary(page, { expectContent: true }),
@@ -345,14 +346,14 @@ test(
           true,
         );
 
-        const fetched = await client.pages.get(pageId);
+        const fetched = await expectOk(client.pages.get(pageId));
         assertPage(fetched);
 
-        const fetchedBySlug = await client.page.getBySlug(`${prefix}-page`);
+        const fetchedBySlug = await expectOk(client.page.getBySlug(`${prefix}-page`));
         assertPage(fetchedBySlug);
         assert.equal(fetchedBySlug.id, pageId);
 
-        const updated = await client.pages.update(pageId, {
+        const updated = await expectOk(client.pages.update(pageId, {
           title: `${prefix} page updated`,
           content: [
             {
@@ -366,77 +367,81 @@ test(
             },
           ],
           metaName: `${prefix} meta updated`,
-        });
+        }));
 
         assert.equal(updated.page.title, `${prefix} page updated`);
         assert.equal(Array.isArray(updated.page.content), true);
 
-        const duplicate = await client.pages.duplicate(pageId);
+        const duplicate = await expectOk(client.pages.duplicate(pageId));
         created.pageIds.push(duplicate.page.id);
         assertPage(duplicate.page);
         assert.notEqual(duplicate.page.id, pageId);
 
-        const translation = await client.pages.createTranslation(pageId, {
+        const translation = await expectOk(client.pages.createTranslation(pageId, {
           language: localeCode,
           mode: "copy",
-        });
+        }));
         created.pageIds.push(translation.page.id);
         assertPage(translation.page);
         assert.equal(translation.page.language, localeCode);
 
-        const upload = await client.media.upload({
+        const upload = await expectOk(client.media.upload({
           file: makeTinyPngBytes(),
           fileName: `${prefix}.png`,
           contentType: "image/png",
           pageId: pageId,
           alt: `${prefix} image`,
-        });
+        }));
 
         created.mediaId = upload.media.id;
         assertMedia(upload.media);
         assert.equal(typeof upload.editorNode, "object");
 
-        const mediaList = await client.media.list({
+        const mediaList = await expectOk(client.media.list({
           pageId: pageId,
           limit: 10,
-        });
+        }));
         assertListResponse(mediaList, assertMedia);
         assert.equal(
           mediaList.data.some((item) => item.id === upload.media.id),
           true,
         );
 
-        const mediaDetail = await client.media.get(upload.media.id);
+        const mediaDetail = await expectOk(client.media.get(upload.media.id));
         assertMediaDetail(mediaDetail);
 
-        const mediaUpdated = await client.media.update(upload.media.id, {
+        const mediaUpdated = await expectOk(client.media.update(upload.media.id, {
           fileName: `${prefix}-updated.png`,
           alt: `${prefix} image updated`,
-        });
+        }));
         assert.equal(mediaUpdated.media.fileName, `${prefix}-updated.png`);
         assert.equal(mediaUpdated.media.alt, `${prefix} image updated`);
 
-        const mediaDeleted = await client.media.delete(upload.media.id);
+        const mediaDeleted = await expectOk(client.media.delete(upload.media.id));
         assert.equal(mediaDeleted.deleted, true);
         created.mediaId = null;
 
-        const deleted = await client.pages.delete(pageId);
+        const deleted = await expectOk(client.pages.delete(pageId));
         assert.equal(deleted.deleted, true);
 
-        const deletedPage = await client.pages.get(pageId, {
-          includeDeleted: true,
-        });
+        const deletedPage = await expectOk(
+          client.pages.get(pageId, {
+            includeDeleted: true,
+          }),
+        );
         assertPage(deletedPage);
         assert.notEqual(deletedPage.deletedAt, null);
 
-        const restored = await client.pages.restore(pageId);
+        const restored = await expectOk(client.pages.restore(pageId));
         assert.equal(restored.restored, true);
         assert.equal(restored.page.id, pageId);
 
-        const deletedAgain = await client.pages.delete(pageId);
+        const deletedAgain = await expectOk(client.pages.delete(pageId));
         assert.equal(deletedAgain.deleted, true);
 
-        const permanentlyDeleted = await client.pages.permanentlyDelete(pageId);
+        const permanentlyDeleted = await expectOk(
+          client.pages.permanentlyDelete(pageId),
+        );
         assert.equal(permanentlyDeleted.permanentlyDeleted, true);
         created.pageIds = created.pageIds.filter((id) => id !== pageId);
       },
@@ -449,28 +454,28 @@ test(
           inner.skip("Set PARAGRAPH_AI_MODEL to run live AI endpoint tests.");
         }
 
-        const metaName = await client.ai.generateMetaName({
+        const metaName = await expectOk(client.ai.generateMetaName({
           model: aiModel,
           title: `${prefix} article`,
           content: [],
-        });
+        }));
         assert.equal(typeof metaName.metaName, "string");
         assert.equal(metaName.metaName.length > 0, true);
 
-        const metaDescription = await client.ai.generateMetaDescription({
+        const metaDescription = await expectOk(client.ai.generateMetaDescription({
           model: aiModel,
           title: `${prefix} article`,
           content: [],
-        });
+        }));
         assert.equal(typeof metaDescription.metaDescription, "string");
         assert.equal(metaDescription.metaDescription.length > 0, true);
 
-        const content = await client.ai.generateContent({
+        const content = await expectOk(client.ai.generateContent({
           model: aiModel,
           title: `${prefix} article`,
           content: [],
           prompt: "Write a very short intro paragraph.",
-        });
+        }));
         assert.equal(typeof content.title, "string");
         assert.equal(Array.isArray(content.content), true);
       },

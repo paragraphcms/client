@@ -1,16 +1,13 @@
 import Bottleneck from "bottleneck";
 import { ParagraphClientError } from "./errors.js";
 
-const DEFAULT_MAX_CONCURRENT_REQUESTS = 3;
+const DEFAULT_MAX_CONCURRENT_REQUESTS = 1;
 
 export class RequestRateLimiter {
   private readonly limiter: Bottleneck;
 
   constructor(requestsPerSecond: number) {
-    if (
-      !Number.isFinite(requestsPerSecond) ||
-      requestsPerSecond <= 0
-    ) {
+    if (!Number.isFinite(requestsPerSecond) || requestsPerSecond <= 0) {
       throw new ParagraphClientError(
         "`maxRequestsPerSecond` must be a positive number.",
       );

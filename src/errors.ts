@@ -48,3 +48,5 @@ export class ParagraphClientError extends Error {
     this.cause = options?.cause;
   }
 }
+
+export type ParagraphError = ParagraphApiError | ParagraphClientError;

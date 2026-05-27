@@ -6,6 +6,7 @@ import {
   ParagraphApiError,
   ParagraphClientError,
 } from "../dist/index.js";
+import { expectError, expectOk } from "./_helpers.mjs";
 
 function toRequest(input, init) {
   return input instanceof Request ? input : new Request(input, init);
@@ -35,12 +36,14 @@ test("Client uses the official API endpoint and maps hasPublished to published",
     },
   });
 
-  await client.pages.list({
-    includeContent: true,
-    labelIds: ["label-a", "label-b"],
-    deleted: "include",
-    published: false,
-  });
+  await expectOk(
+    client.pages.list({
+      includeContent: true,
+      labelIds: ["label-a", "label-b"],
+      deleted: "include",
+      published: false,
+    }),
+  );
 
   assert.equal(calls.length, 1);
   const [request] = calls;
@@ -83,7 +86,7 @@ test("Client still accepts the legacy published filter", async () => {
     },
   });
 
-  await client.pages.list({ published: false });
+  await expectOk(client.pages.list({ published: false }));
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].searchParams.get("published"), "false");
@@ -138,10 +141,12 @@ test("pages.list preserves collection and collectionId query params", async () =
     },
   });
 
-  await client.pages.list({
-    collection: "Blog",
-    collectionId: "collection-123",
-  });
+  await expectOk(
+    client.pages.list({
+      collection: "Blog",
+      collectionId: "collection-123",
+    }),
+  );
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].searchParams.get("collection"), "Blog");
@@ -150,48 +155,6 @@ test("pages.list preserves collection and collectionId query params", async () =
   assert.equal(calls[0].searchParams.get("requiredSlug"), null);
   assert.equal(
     Array.from(calls[0].searchParams.keys()).some((key) => key.includes("_")),
-    false,
-  );
-});
-
-test("page.list aliases pages.list and keeps requiredSlug camel-cased in the API query", async () => {
-  const calls = [];
-  const client = new Client({
-    apiKey: "test-key",
-    fetch: async (input, init) => {
-      const url = new URL(toRequest(input, init).url);
-      calls.push(url);
-
-      return Response.json({
-        data: [],
-        meta: {
-          page: 1,
-          limit: 20,
-          totalItems: 0,
-          totalPages: 0,
-          hasNextPage: false,
-          hasPrevPage: false,
-        },
-      });
-    },
-  });
-
-  await client.page.list({ requiredSlug: true });
-  await client.page.list({ requiredSlug: false });
-
-  assert.equal(calls.length, 2);
-  assert.equal(calls[0].searchParams.get("requiredSlug"), "true");
-  assert.equal(calls[0].searchParams.get("includeContent"), "false");
-  assert.equal(calls[0].searchParams.get("published"), "true");
-  assert.equal(calls[1].searchParams.get("requiredSlug"), null);
-  assert.equal(calls[1].searchParams.get("includeContent"), "false");
-  assert.equal(calls[1].searchParams.get("published"), "true");
-  assert.equal(
-    Array.from(calls[0].searchParams.keys()).some((key) => key.includes("_")),
-    false,
-  );
-  assert.equal(
-    Array.from(calls[1].searchParams.keys()).some((key) => key.includes("_")),
     false,
   );
 });
@@ -226,7 +189,7 @@ test("pages.list without explicit pagination aggregates every API page", async (
     },
   });
 
-  const listed = await client.pages.list({ deleted: "include" });
+  const listed = await expectOk(client.pages.list({ deleted: "include" }));
 
   assert.equal(calls.length, 2);
   assert.equal(calls[0].searchParams.get("includeContent"), "false");
@@ -278,13 +241,15 @@ test("media.upload builds multipart form data for binary buffers", async () => {
     },
   });
 
-  await client.media.upload({
-    file: Buffer.from([1, 2, 3]),
-    fileName: "hero.png",
-    contentType: "image/png",
-    pageId: "page-id",
-    alt: "Hero",
-  });
+  await expectOk(
+    client.media.upload({
+      file: Buffer.from([1, 2, 3]),
+      fileName: "hero.png",
+      contentType: "image/png",
+      pageId: "page-id",
+      alt: "Hero",
+    }),
+  );
 
   const [{ request, formData }] = calls;
   assert.equal(request.method, "POST");
@@ -325,16 +290,12 @@ test("Client converts API errors into ParagraphApiError", async () => {
       ),
   });
 
-  await assert.rejects(
-    () => client.pages.get("missing"),
-    (error) => {
-      assert.equal(error instanceof ParagraphApiError, true);
-      assert.equal(error.status, 404);
-      assert.equal(error.code, "pageNotFound");
-      assert.deepEqual(error.details, { pageId: "missing" });
-      return true;
-    },
-  );
+  const error = await expectError(client.pages.get("missing"));
+
+  assert.equal(error instanceof ParagraphApiError, true);
+  assert.equal(error.status, 404);
+  assert.equal(error.code, "pageNotFound");
+  assert.deepEqual(error.details, { pageId: "missing" });
 });
 
 test("Client retries 429 responses using Retry-After", async () => {
@@ -378,9 +339,11 @@ test("Client retries 429 responses using Retry-After", async () => {
     },
   });
 
-  const info = await client.getInfo({
-    maxRateLimitRetries: 1,
-  });
+  const info = await expectOk(
+    client.getInfo({
+      maxRateLimitRetries: 1,
+    }),
+  );
 
   assert.equal(info.version, "v1");
   assert.equal(info.openapiUrl, "/v1/openapi.json");
@@ -430,10 +393,12 @@ test("Client respects Retry-After delays for 429 responses", async () => {
     },
   });
 
-  const info = await client.getInfo({
-    maxRateLimitRetries: 1,
-    timeoutMs: 3000,
-  });
+  const info = await expectOk(
+    client.getInfo({
+      maxRateLimitRetries: 1,
+      timeoutMs: 3000,
+    }),
+  );
 
   assert.equal(info.version, "v1");
   assert.equal(info.openapiUrl, "/v1/openapi.json");
@@ -468,16 +433,12 @@ test("Client stops retrying 429 responses after maxRateLimitRetries", async () =
     },
   });
 
-  await assert.rejects(
-    () => client.getInfo(),
-    (error) => {
-      assert.equal(error instanceof ParagraphApiError, true);
-      assert.equal(error.status, 429);
-      assert.equal(error.code, "rateLimited");
-      assert.equal(calls, 2);
-      return true;
-    },
-  );
+  const error = await expectError(client.getInfo());
+
+  assert.equal(error instanceof ParagraphApiError, true);
+  assert.equal(error.status, 429);
+  assert.equal(error.code, "rateLimited");
+  assert.equal(calls, 2);
 });
 
 test("page.getBySlug resolves the page through slug lookup and returns full details", async () => {
@@ -523,7 +484,7 @@ test("page.getBySlug resolves the page through slug lookup and returns full deta
     },
   });
 
-  const page = await client.page.getBySlug("pricing");
+  const page = await expectOk(client.page.getBySlug("pricing"));
 
   assert.equal(page.id, "page-1");
   assert.equal(page.slug, "pricing");
@@ -531,10 +492,61 @@ test("page.getBySlug resolves the page through slug lookup and returns full deta
   assert.equal(calls[0].pathname, "/v1/pages");
   assert.equal(calls[0].searchParams.get("includeContent"), "false");
   assert.equal(calls[0].searchParams.get("slug"), "pricing");
+  assert.equal(calls[0].searchParams.get("requiredSlug"), "true");
   assert.equal(calls[0].searchParams.get("published"), null);
   assert.equal(calls[0].searchParams.get("page"), "1");
   assert.equal(calls[0].searchParams.get("limit"), "100");
   assert.equal(calls[1].pathname, "/v1/pages/page-1");
+});
+
+test("page.getBySlug rejects inconsistent slug data from the page details endpoint", async () => {
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async (input, init) => {
+      const url = new URL(toRequest(input, init).url);
+
+      if (url.pathname === "/v1/pages") {
+        return Response.json({
+          data: [
+            {
+              id: "page-1",
+              slug: "pricing",
+            },
+          ],
+          meta: {
+            page: 1,
+            limit: 100,
+            totalItems: 1,
+            totalPages: 1,
+            hasNextPage: false,
+            hasPrevPage: false,
+          },
+        });
+      }
+
+      if (url.pathname === "/v1/pages/page-1") {
+        return Response.json({
+          data: {
+            id: "page-1",
+            title: "Pricing",
+            slug: null,
+            content: [],
+            translations: [],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected request: ${url}`);
+    },
+  });
+
+  const error = await expectError(client.page.getBySlug("pricing"));
+
+  assert.equal(error instanceof ParagraphClientError, true);
+  assert.equal(
+    error.message,
+    'Page fetched by slug returned inconsistent slug data for "pricing".',
+  );
 });
 
 test("page.get is a short alias for pages.get", async () => {
@@ -561,7 +573,7 @@ test("page.get is a short alias for pages.get", async () => {
     },
   });
 
-  const page = await client.page.get("page-1");
+  const page = await expectOk(client.page.get("page-1"));
 
   assert.equal(page.id, "page-1");
   assert.equal(calls.length, 1);
@@ -615,7 +627,7 @@ test("members.get paginates list responses until the member is found", async () 
     },
   });
 
-  const member = await client.members.get("member-2");
+  const member = await expectOk(client.members.get("member-2"));
 
   assert.equal(member.id, "member-2");
   assert.equal(member.userId, "user-2");
@@ -650,7 +662,7 @@ test("locales.get returns a locale from the locale list", async () => {
     },
   });
 
-  const locale = await client.locales.get("pl");
+  const locale = await expectOk(client.locales.get("pl"));
 
   assert.equal(locale.id, "locale-pl");
   assert.equal(locale.code, "pl");
@@ -672,7 +684,7 @@ test("locales.getDefaultLocale returns the default locale code", async () => {
     },
   });
 
-  const defaultLocale = await client.locales.getDefaultLocale();
+  const defaultLocale = await expectOk(client.locales.getDefaultLocale());
 
   assert.equal(defaultLocale, "en");
   assert.equal(calls, 1);
@@ -695,34 +707,26 @@ test("SDK lookup helpers return ParagraphApiError when the resource is missing",
       }),
   });
 
-  await assert.rejects(
-    () => client.members.get("missing-member"),
-    (error) => {
-      assert.equal(error instanceof ParagraphApiError, true);
-      assert.equal(error.status, 404);
-      assert.equal(error.code, "memberNotFound");
-      assert.deepEqual(error.details, { memberId: "missing-member" });
-      assert.equal(
-        error.request.url,
-        "https://api.paragraphcms.com/v1/members?page=1&limit=100",
-      );
-      return true;
-    },
+  const missingMemberError = await expectError(client.members.get("missing-member"));
+
+  assert.equal(missingMemberError instanceof ParagraphApiError, true);
+  assert.equal(missingMemberError.status, 404);
+  assert.equal(missingMemberError.code, "memberNotFound");
+  assert.deepEqual(missingMemberError.details, { memberId: "missing-member" });
+  assert.equal(
+    missingMemberError.request.url,
+    "https://api.paragraphcms.com/v1/members?page=1&limit=100",
   );
 
-  await assert.rejects(
-    () => client.pages.getBySlug("missing-page"),
-    (error) => {
-      assert.equal(error instanceof ParagraphApiError, true);
-      assert.equal(error.status, 404);
-      assert.equal(error.code, "pageNotFound");
-      assert.deepEqual(error.details, { slug: "missing-page" });
-      assert.equal(
-        error.request.url,
-        "https://api.paragraphcms.com/v1/pages?slug=missing-page&includeContent=false&page=1&limit=100",
-      );
-      return true;
-    },
+  const missingPageError = await expectError(client.pages.getBySlug("missing-page"));
+
+  assert.equal(missingPageError instanceof ParagraphApiError, true);
+  assert.equal(missingPageError.status, 404);
+  assert.equal(missingPageError.code, "pageNotFound");
+  assert.deepEqual(missingPageError.details, { slug: "missing-page" });
+  assert.equal(
+    missingPageError.request.url,
+    "https://api.paragraphcms.com/v1/pages?slug=missing-page&includeContent=false&requiredSlug=true&page=1&limit=100",
   );
 });
 
@@ -748,7 +752,11 @@ test("Client rate-limits request starts per instance", async () => {
     },
   });
 
-  await Promise.all([client.getInfo(), client.getInfo(), client.getInfo()]);
+  await Promise.all([
+    expectOk(client.getInfo()),
+    expectOk(client.getInfo()),
+    expectOk(client.getInfo()),
+  ]);
 
   assert.equal(starts.length, 3);
   assert.equal(starts[1] - starts[0] >= 150, true);
@@ -784,7 +792,7 @@ test("Client binds the global fetch implementation to globalThis", async () => {
 
   try {
     const client = new Client({ apiKey: "test-key" });
-    await client.getInfo();
+    await expectOk(client.getInfo());
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -831,7 +839,7 @@ test("Client retries transient 503 responses", async () => {
     },
   });
 
-  const info = await client.getInfo();
+  const info = await expectOk(client.getInfo());
 
   assert.equal(info.version, "v1");
   assert.equal(calls, 2);

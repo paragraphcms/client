@@ -43,6 +43,16 @@ export interface ListResponse<T> {
   meta: PaginationMeta;
 }
 
+export type ClientResult<T, E = unknown> =
+  | {
+      data: T;
+      error: null;
+    }
+  | {
+      data: null;
+      error: E;
+    };
+
 export interface ApiInfo {
   version: string;
   openapiUrl: string;
@@ -199,6 +209,14 @@ export interface Page extends PageSummary {
   content: PageContent;
   translations: PageTranslation[];
 }
+
+export type PageSummaryWithSlug = Omit<PageSummary, "slug"> & {
+  slug: string;
+};
+
+export type PageWithSlug = Omit<Page, "slug"> & {
+  slug: string;
+};
 
 export interface Media {
   id: string;
@@ -361,6 +379,12 @@ export interface PageListQuery extends ListQuery {
   hasPublished?: boolean;
   published?: boolean;
 }
+
+export type PageListItem<
+  TQuery extends PageListQuery | undefined = undefined,
+> = TQuery extends { requiredSlug: true }
+  ? PageSummaryWithSlug
+  : PageSummary;
 
 export interface GetPageQuery {
   includeDeleted?: boolean;
