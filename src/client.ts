@@ -53,6 +53,7 @@ import type {
   Page,
   PageListItem,
   PageListQuery,
+  PageListResult,
   PageSummary,
   PageSummaryWithSlug,
   PageWithSlug,
@@ -914,7 +915,7 @@ export class Client {
   private async listPages<TQuery extends PageListQuery | undefined>(
     query?: TQuery,
     options?: RequestOptions,
-  ): Promise<ListResponse<PageListItem<TQuery>>> {
+  ): Promise<PageListResult<TQuery>> {
     const pageListQuery = this.createPageListQuery(query, {
       defaultHasPublished: true,
     });
@@ -922,13 +923,15 @@ export class Client {
       query: pageListQuery,
       options,
     });
+    const hasExplicitPagination =
+      pageListQuery.limit !== undefined || pageListQuery.page !== undefined;
 
-    if (
-      pageListQuery.limit !== undefined ||
-      pageListQuery.page !== undefined ||
-      !response.meta.hasNextPage
-    ) {
-      return response as ListResponse<PageListItem<TQuery>>;
+    if (hasExplicitPagination) {
+      return response as PageListResult<TQuery>;
+    }
+
+    if (!response.meta.hasNextPage) {
+      return response.data as PageListResult<TQuery>;
     }
 
     const items = [...response.data];
@@ -954,17 +957,7 @@ export class Client {
       nextPage = lastMeta.page + 1;
     }
 
-    return {
-      data: items,
-      meta: {
-        page: 1,
-        limit: items.length,
-        totalItems: items.length,
-        totalPages: items.length > 0 ? 1 : 0,
-        hasNextPage: false,
-        hasPrevPage: false,
-      },
-    } as ListResponse<PageListItem<TQuery>>;
+    return items as PageListResult<TQuery>;
   }
 
   private createPageListQuery(

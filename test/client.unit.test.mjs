@@ -192,6 +192,7 @@ test("pages.list without explicit pagination aggregates every API page", async (
   const listed = await expectOk(client.pages.list({ deleted: "include" }));
 
   assert.equal(calls.length, 2);
+  assert.equal(Array.isArray(listed), true);
   assert.equal(calls[0].searchParams.get("includeContent"), "false");
   assert.equal(calls[0].searchParams.get("deleted"), "include");
   assert.equal(calls[0].searchParams.get("published"), "true");
@@ -202,13 +203,48 @@ test("pages.list without explicit pagination aggregates every API page", async (
   assert.equal(calls[1].searchParams.get("published"), "true");
   assert.equal(calls[1].searchParams.get("page"), "2");
   assert.equal(calls[1].searchParams.get("limit"), "2");
-  assert.equal(listed.data.length, 3);
-  assert.equal(listed.meta.page, 1);
-  assert.equal(listed.meta.limit, 3);
+  assert.deepEqual(
+    listed.map((page) => page.id),
+    ["page-1", "page-2", "page-3"],
+  );
+  assert.equal(listed.meta, undefined);
+});
+
+test("pages.list with explicit pagination preserves the list response meta", async () => {
+  const calls = [];
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async (input, init) => {
+      const url = new URL(toRequest(input, init).url);
+      calls.push(url);
+
+      return Response.json({
+        data: [
+          { id: "page-1", title: "Page 1", slug: "page-1" },
+          { id: "page-2", title: "Page 2", slug: "page-2" },
+        ],
+        meta: {
+          page: 1,
+          limit: 2,
+          totalItems: 3,
+          totalPages: 2,
+          hasNextPage: true,
+          hasPrevPage: false,
+        },
+      });
+    },
+  });
+
+  const listed = await expectOk(client.pages.list({ limit: 2 }));
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].searchParams.get("includeContent"), "false");
+  assert.equal(calls[0].searchParams.get("published"), "true");
+  assert.equal(calls[0].searchParams.get("limit"), "2");
+  assert.equal(Array.isArray(listed.data), true);
+  assert.equal(listed.data.length, 2);
   assert.equal(listed.meta.totalItems, 3);
-  assert.equal(listed.meta.totalPages, 1);
-  assert.equal(listed.meta.hasNextPage, false);
-  assert.equal(listed.meta.hasPrevPage, false);
+  assert.equal(listed.meta.hasNextPage, true);
 });
 
 test("media.upload builds multipart form data for binary buffers", async () => {

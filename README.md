@@ -54,24 +54,24 @@ On success, `error` is `null`. On failure, `data` is `null` and `error` is a `Pa
 ### Get Published Pages or Pages From a Collection
 
 ```ts
-const { data: publishedPagesResult, error: publishedPagesError } =
+const { data: publishedPages, error: publishedPagesError } =
   await client.pages.list();
 
-const { data: allPagesResult, error: allPagesError } = await client.pages.list({
+const { data: allPages, error: allPagesError } = await client.pages.list({
   published: false,
 });
 
-const { data: collectionPagesResult, error: collectionPagesError } =
+const { data: collectionPages, error: collectionPagesError } =
   await client.pages.list({
   collection: "Blog",
 });
 
-const { data: collectionPagesByIdResult, error: collectionPagesByIdError } =
+const { data: collectionPagesById, error: collectionPagesByIdError } =
   await client.pages.list({
   collectionId: "collection-id",
 });
 
-const { data: pagesWithSlugsResult, error: pagesWithSlugsError } =
+const { data: pagesWithSlugs, error: pagesWithSlugsError } =
   await client.pages.list({
   requiredSlug: true,
 });
@@ -87,15 +87,16 @@ if (
   return;
 }
 
-console.log(publishedPagesResult.meta.totalItems);
-console.log(publishedPagesResult.data.map((page) => page.title));
-console.log(allPagesResult.data.map((page) => page.title));
-console.log(collectionPagesResult.data.map((page) => page.title));
-console.log(collectionPagesByIdResult.data.map((page) => page.title));
-console.log(pagesWithSlugsResult.data.map((page) => page.slug.toUpperCase()));
+console.log(publishedPages.length);
+console.log(publishedPages.map((page) => page.title));
+console.log(allPages.map((page) => page.title));
+console.log(collectionPages.map((page) => page.title));
+console.log(collectionPagesById.map((page) => page.title));
+console.log(pagesWithSlugs.map((page) => page.slug.toUpperCase()));
 ```
 
 `client.pages.list()` now returns only published pages by default. To include unpublished pages, pass `published: false`.
+When neither `page` nor `limit` is passed, `client.pages.list()` fetches every matching API page and returns the pages array directly. Pass `page` or `limit` to receive a paginated response with `data` and `meta`.
 Passing `requiredSlug: true` also narrows `page.slug` to `string` in TypeScript.
 
 ### Get a Page by Slug

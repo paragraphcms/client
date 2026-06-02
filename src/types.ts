@@ -386,6 +386,28 @@ export type PageListItem<
   ? PageSummaryWithSlug
   : PageSummary;
 
+type DefinedPropertyValue<T, TKey extends PropertyKey> = T extends undefined
+  ? never
+  : TKey extends keyof T
+    ? Exclude<T[TKey], undefined>
+    : never;
+
+type HasDefinedProperty<T, TKey extends PropertyKey> = [
+  DefinedPropertyValue<T, TKey>,
+] extends [never]
+  ? false
+  : true;
+
+type HasExplicitPagination<T> = HasDefinedProperty<T, "page"> extends true
+  ? true
+  : HasDefinedProperty<T, "limit">;
+
+export type PageListResult<
+  TQuery extends PageListQuery | undefined = undefined,
+> = HasExplicitPagination<TQuery> extends true
+  ? ListResponse<PageListItem<TQuery>>
+  : PageListItem<TQuery>[];
+
 export interface GetPageQuery {
   includeDeleted?: boolean;
 }
