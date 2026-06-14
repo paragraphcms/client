@@ -166,6 +166,7 @@ export function assertMedia(media) {
   assert.equal(typeof media.id, "string");
   assertNullableString(media.pageId);
   assert.equal(typeof media.fileName, "string");
+  assertNullableString(media.slug);
   assertNullableString(media.alt);
   assert.equal(typeof media.mimeType, "string");
   assert.equal(typeof media.size, "number");

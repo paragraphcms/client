@@ -262,6 +262,7 @@ test("media.upload builds multipart form data for binary buffers", async () => {
             id: "media-id",
             pageId: "page-id",
             fileName: "hero.png",
+            slug: "hero",
             alt: "Hero",
             mimeType: "image/png",
             size: 68,
@@ -283,6 +284,7 @@ test("media.upload builds multipart form data for binary buffers", async () => {
       fileName: "hero.png",
       contentType: "image/png",
       pageId: "page-id",
+      slug: "hero",
       alt: "Hero",
     }),
   );
@@ -296,6 +298,7 @@ test("media.upload builds multipart form data for binary buffers", async () => {
     true,
   );
   assert.equal(formData.get("pageId"), "page-id");
+  assert.equal(formData.get("slug"), "hero");
   assert.equal(formData.get("alt"), "Hero");
 
   const file = formData.get("file");

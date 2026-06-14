@@ -222,6 +222,7 @@ export interface Media {
   id: string;
   pageId: string | null;
   fileName: string;
+  slug: string | null;
   alt: string | null;
   mimeType: string;
   size: number;
@@ -462,11 +463,12 @@ export interface UploadMediaRequest {
   fileName?: string;
   contentType?: string;
   pageId: string;
+  slug?: string | null;
   alt?: string | null;
 }
 
 export interface UpdateMediaRequest {
-  fileName?: string;
+  slug?: string | null;
   alt?: string | null;
 }
 

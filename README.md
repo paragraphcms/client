@@ -127,6 +127,40 @@ if (error) {
 console.log(locales.map((locale) => locale.code));
 ```
 
+### Upload and Update Media
+
+```ts
+const { data: uploadedMedia, error: uploadError } = await client.media.upload({
+  file: imageBuffer,
+  fileName: "hero.png",
+  contentType: "image/png",
+  pageId: "page-id",
+  slug: "hero-image",
+  alt: "Hero image caption",
+});
+
+if (uploadError) {
+  console.error(uploadError.message);
+  return;
+}
+
+const { data: updatedMedia, error: updateError } = await client.media.update(
+  uploadedMedia.media.id,
+  {
+    slug: "hero-image-updated",
+    alt: "Updated hero image caption",
+  },
+);
+
+if (updateError) {
+  console.error(updateError.message);
+  return;
+}
+
+console.log(updatedMedia.media.slug);
+console.log(updatedMedia.media.alt);
+```
+
 ## Framework Guides
 
 Build with:

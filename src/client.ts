@@ -405,6 +405,10 @@ function createUploadFormData(input: UploadMediaRequest) {
 
   formData.append("pageId", input.pageId);
 
+  if (input.slug !== undefined && input.slug !== null) {
+    formData.append("slug", input.slug);
+  }
+
   if (input.alt !== undefined && input.alt !== null) {
     formData.append("alt", input.alt);
   }
