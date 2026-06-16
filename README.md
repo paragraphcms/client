@@ -2,13 +2,9 @@
 
 Official TypeScript client for the Paragraph CMS API.
 
-<!--
-Replace this block with the README image.
-
 <p align="center">
-  <img src="./assets/paragraph-client.png" alt="@paragraphcms/client" />
+  <img src="./assets/paragraphcms-client-hero.jpg" alt="@paragraphcms/client" />
 </p>
--->
 
 `@paragraphcms/client` is a small, typed SDK for the Paragraph CMS API. It runs in Node.js 18+ and other server-side runtimes that expose `fetch`.
 
