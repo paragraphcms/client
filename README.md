@@ -110,6 +110,73 @@ console.log(page.title);
 console.log(page.slug.toUpperCase());
 ```
 
+### Run Common Page Workflows
+
+```ts
+const translation = await client.pages.translate("page-id", {
+  language: "pl",
+  model: "openai/gpt-5",
+});
+
+const statusChange = await client.pages.setStatus("page-id", "status-id");
+const collectionChange = await client.pages.setCollection("page-id", null);
+
+const rewritten = await client.pages.generateContent("page-id", {
+  model: "openai/gpt-5",
+  prompt: "Rewrite the intro for enterprise buyers.",
+});
+
+if (
+  translation.error ||
+  statusChange.error ||
+  collectionChange.error ||
+  rewritten.error
+) {
+  console.error("Request failed.");
+  return;
+}
+
+console.log(translation.data.page.language);
+console.log(statusChange.data.page.statusId);
+console.log(collectionChange.data.page.collectionId);
+console.log(rewritten.data.title);
+```
+
+### Generate SEO and Hero Metadata
+
+```ts
+const metaName = await client.ai.generateMetaName({
+  model: "openai/gpt-5",
+  title: "Enterprise Pricing",
+  content: [],
+});
+
+const metaDescription = await client.ai.generateMetaDescription({
+  model: "openai/gpt-5",
+  title: "Enterprise Pricing",
+  content: [],
+});
+
+const heroSlug = await client.ai.generateImageSlug({
+  model: "openai/gpt-5",
+  caption: "Team presenting the dashboard.",
+});
+
+const heroCaption = await client.ai.generateImageCaption({
+  model: "openai/gpt-5",
+  slug: "team-dashboard-hero",
+});
+
+const heroAlt = await client.ai.generateImageAlt({
+  model: "openai/gpt-5",
+  caption: "Team presenting the dashboard.",
+});
+
+const pageSlug = await client.ai.generatePageSlug({
+  title: "Enterprise Pricing",
+});
+```
+
 ### Get All Supported Languages
 
 ```ts

@@ -336,10 +336,30 @@ export interface AiMetaDescriptionResult {
   metaDescription: string;
 }
 
+export interface AiImageSlugResult {
+  message: string;
+  slug: string;
+}
+
+export interface AiImageCaptionResult {
+  message: string;
+  caption: string;
+}
+
+export interface AiImageAltResult {
+  message: string;
+  alt: string;
+}
+
 export interface AiContentResult {
   message: string;
   title: string;
   content: RichTextContent;
+}
+
+export interface PageSlugResult {
+  message: string;
+  slug: string;
 }
 
 export interface DeleteResult {
@@ -458,6 +478,16 @@ export interface CreatePageTranslationRequest {
   model?: string;
 }
 
+export interface TranslatePageRequest {
+  language: string;
+  model: string;
+}
+
+export interface GeneratePageContentFromPageRequest {
+  model: string;
+  prompt: string;
+}
+
 export interface CollectionListQuery extends ListQuery {
   defaultDataModelId?: string;
 }
@@ -541,6 +571,29 @@ export interface GenerateMetaRequest {
   model: string;
   title?: string;
   content?: RichTextContent;
+}
+
+export interface GenerateImageSlugRequest {
+  model: string;
+  caption?: string;
+  alt?: string;
+}
+
+export interface GenerateImageCaptionRequest {
+  model: string;
+  slug?: string;
+  alt?: string;
+}
+
+export interface GenerateImageAltRequest {
+  model: string;
+  slug?: string;
+  caption?: string;
+}
+
+export interface GeneratePageSlugRequest {
+  title: string;
+  pageId?: string;
 }
 
 export interface GenerateContentRequest extends GenerateMetaRequest {

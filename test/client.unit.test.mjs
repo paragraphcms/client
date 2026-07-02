@@ -12,6 +12,11 @@ function toRequest(input, init) {
   return input instanceof Request ? input : new Request(input, init);
 }
 
+async function readJsonBody(request) {
+  const text = await request.clone().text();
+  return text ? JSON.parse(text) : null;
+}
+
 test("Client requires an API key", () => {
   assert.throws(() => new Client({ apiKey: "   " }), ParagraphClientError);
 });
@@ -618,6 +623,218 @@ test("page.get is a short alias for pages.get", async () => {
   assert.equal(page.id, "page-1");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].pathname, "/v1/pages/page-1");
+});
+
+test("pages workflow helpers target the expected endpoints", async () => {
+  const calls = [];
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async (input, init) => {
+      const request = toRequest(input, init);
+      const body = await readJsonBody(request);
+      calls.push({ request, body });
+
+      return Response.json({
+        data: {
+          message: "ok",
+          page: {
+            id: "page-1",
+            title: "Pricing",
+            slug: "pricing",
+            language: "en",
+            content: [],
+            translations: [],
+          },
+        },
+      });
+    },
+  });
+
+  await expectOk(
+    client.pages.translate("page-1", {
+      language: "pl",
+      model: "openai/gpt-5",
+    }),
+  );
+  await expectOk(client.pages.setStatus("page-1", "status-1"));
+  await expectOk(client.pages.setCollection("page-1", null));
+
+  assert.equal(calls.length, 3);
+
+  assert.equal(calls[0].request.method, "POST");
+  assert.equal(
+    new URL(calls[0].request.url).pathname,
+    "/v1/pages/page-1/translations",
+  );
+  assert.deepEqual(calls[0].body, {
+    language: "pl",
+    model: "openai/gpt-5",
+    mode: "translate",
+  });
+
+  assert.equal(calls[1].request.method, "PATCH");
+  assert.equal(new URL(calls[1].request.url).pathname, "/v1/pages/page-1");
+  assert.deepEqual(calls[1].body, {
+    statusId: "status-1",
+  });
+
+  assert.equal(calls[2].request.method, "PATCH");
+  assert.equal(new URL(calls[2].request.url).pathname, "/v1/pages/page-1");
+  assert.deepEqual(calls[2].body, {
+    collectionId: null,
+  });
+});
+
+test("pages.generateContent uses the stored page as prompt context", async () => {
+  const calls = [];
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async (input, init) => {
+      const request = toRequest(input, init);
+      const body = await readJsonBody(request);
+      calls.push({ request, body });
+
+      return Response.json({
+        data: {
+          message: "generated",
+          title: "Pricing refresh",
+          content: [],
+        },
+      });
+    },
+  });
+
+  const generated = await expectOk(
+    client.pages.generateContent("page-1", {
+      model: "openai/gpt-5",
+      prompt: "Rewrite the intro for enterprise buyers.",
+    }),
+  );
+
+  assert.equal(generated.title, "Pricing refresh");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].request.method, "POST");
+  assert.equal(
+    new URL(calls[0].request.url).pathname,
+    "/v1/pages/page-1/ai/content",
+  );
+  assert.deepEqual(calls[0].body, {
+    model: "openai/gpt-5",
+    prompt: "Rewrite the intro for enterprise buyers.",
+  });
+});
+
+test("ai image and slug helpers target the expected endpoints", async () => {
+  const calls = [];
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async (input, init) => {
+      const request = toRequest(input, init);
+      const body = await readJsonBody(request);
+      calls.push({ request, body });
+
+      const pathname = new URL(request.url).pathname;
+
+      if (pathname === "/v1/ai/image-slug") {
+        return Response.json({
+          data: {
+            message: "generated",
+            slug: "team-dashboard-hero",
+          },
+        });
+      }
+
+      if (pathname === "/v1/ai/image-caption") {
+        return Response.json({
+          data: {
+            message: "generated",
+            caption: "Team presenting the dashboard.",
+          },
+        });
+      }
+
+      if (pathname === "/v1/ai/image-alt") {
+        return Response.json({
+          data: {
+            message: "generated",
+            alt: "Team presenting a product dashboard.",
+          },
+        });
+      }
+
+      if (pathname === "/v1/ai/page-slug") {
+        return Response.json({
+          data: {
+            message: "generated",
+            slug: "enterprise-pricing",
+          },
+        });
+      }
+
+      throw new Error(`Unexpected request: ${request.url}`);
+    },
+  });
+
+  const imageSlug = await expectOk(
+    client.ai.generateImageSlug({
+      model: "openai/gpt-5",
+      caption: "Team presenting the dashboard.",
+    }),
+  );
+  const imageCaption = await expectOk(
+    client.ai.generateImageCaption({
+      model: "openai/gpt-5",
+      slug: "team-dashboard-hero",
+    }),
+  );
+  const imageAlt = await expectOk(
+    client.ai.generateImageAlt({
+      model: "openai/gpt-5",
+      caption: "Team presenting the dashboard.",
+    }),
+  );
+  const pageSlug = await expectOk(
+    client.ai.generatePageSlug({
+      title: "Enterprise Pricing",
+      pageId: "3c4f4ca7-bf06-4f59-ad60-e872c406b16d",
+    }),
+  );
+
+  assert.equal(imageSlug.slug, "team-dashboard-hero");
+  assert.equal(imageCaption.caption, "Team presenting the dashboard.");
+  assert.equal(imageAlt.alt, "Team presenting a product dashboard.");
+  assert.equal(pageSlug.slug, "enterprise-pricing");
+  assert.equal(calls.length, 4);
+
+  assert.equal(
+    new URL(calls[0].request.url).pathname,
+    "/v1/ai/image-slug",
+  );
+  assert.deepEqual(calls[0].body, {
+    model: "openai/gpt-5",
+    caption: "Team presenting the dashboard.",
+  });
+
+  assert.equal(
+    new URL(calls[1].request.url).pathname,
+    "/v1/ai/image-caption",
+  );
+  assert.deepEqual(calls[1].body, {
+    model: "openai/gpt-5",
+    slug: "team-dashboard-hero",
+  });
+
+  assert.equal(new URL(calls[2].request.url).pathname, "/v1/ai/image-alt");
+  assert.deepEqual(calls[2].body, {
+    model: "openai/gpt-5",
+    caption: "Team presenting the dashboard.",
+  });
+
+  assert.equal(new URL(calls[3].request.url).pathname, "/v1/ai/page-slug");
+  assert.deepEqual(calls[3].body, {
+    title: "Enterprise Pricing",
+    pageId: "3c4f4ca7-bf06-4f59-ad60-e872c406b16d",
+  });
 });
 
 test("members.get paginates list responses until the member is found", async () => {

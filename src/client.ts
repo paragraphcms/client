@@ -11,6 +11,9 @@ import {
 } from "./errors.js";
 import { RequestRateLimiter } from "./rate-limiter.js";
 import type {
+  AiImageAltResult,
+  AiImageCaptionResult,
+  AiImageSlugResult,
   AiContentResult,
   AiMetaDescriptionResult,
   AiMetaNameResult,
@@ -34,6 +37,11 @@ import type {
   DeleteByCodeResult,
   DeleteResult,
   GenerateContentRequest,
+  GenerateImageAltRequest,
+  GenerateImageCaptionRequest,
+  GenerateImageSlugRequest,
+  GeneratePageContentFromPageRequest,
+  GeneratePageSlugRequest,
   GenerateMetaRequest,
   GetPageQuery,
   Label,
@@ -57,6 +65,7 @@ import type {
   PageSummaryWithSlug,
   PageWithSlug,
   PageMutationResult,
+  PageSlugResult,
   PageRestoreResult,
   PermanentDeleteResult,
   ReorderLabelsRequest,
@@ -67,6 +76,7 @@ import type {
   Status,
   StatusListQuery,
   StatusMutationResult,
+  TranslatePageRequest,
   UpdateCollectionRequest,
   UpdateDataModelRequest,
   UpdateLabelRequest,
@@ -490,6 +500,54 @@ export class Client {
           },
         ),
       ),
+    translate: (
+      pageId: string,
+      body: TranslatePageRequest,
+      options?: RequestOptions,
+    ) =>
+      this.pages.createTranslation(
+        pageId,
+        {
+          ...body,
+          mode: "translate",
+        },
+        options,
+      ),
+    setStatus: (
+      pageId: string,
+      statusId: string | null,
+      options?: RequestOptions,
+    ) =>
+      this.pages.update(
+        pageId,
+        {
+          statusId,
+        },
+        options,
+      ),
+    setCollection: (
+      pageId: string,
+      collectionId: string | null,
+      options?: RequestOptions,
+    ) =>
+      this.pages.update(
+        pageId,
+        {
+          collectionId,
+        },
+        options,
+      ),
+    generateContent: (
+      pageId: string,
+      body: GeneratePageContentFromPageRequest,
+      options?: RequestOptions,
+    ) =>
+      this.execute(() =>
+        this.requestData<AiContentResult>("POST", `/pages/${pageId}/ai/content`, {
+          body,
+          options,
+        }),
+      ),
     createTranslation: (
       pageId: string,
       body: CreatePageTranslationRequest,
@@ -862,6 +920,46 @@ export class Client {
             options,
           },
         ),
+      ),
+    generateImageSlug: (
+      body: GenerateImageSlugRequest,
+      options?: RequestOptions,
+    ) =>
+      this.execute(() =>
+        this.requestData<AiImageSlugResult>("POST", "/ai/image-slug", {
+          body,
+          options,
+        }),
+      ),
+    generateImageCaption: (
+      body: GenerateImageCaptionRequest,
+      options?: RequestOptions,
+    ) =>
+      this.execute(() =>
+        this.requestData<AiImageCaptionResult>("POST", "/ai/image-caption", {
+          body,
+          options,
+        }),
+      ),
+    generateImageAlt: (
+      body: GenerateImageAltRequest,
+      options?: RequestOptions,
+    ) =>
+      this.execute(() =>
+        this.requestData<AiImageAltResult>("POST", "/ai/image-alt", {
+          body,
+          options,
+        }),
+      ),
+    generatePageSlug: (
+      body: GeneratePageSlugRequest,
+      options?: RequestOptions,
+    ) =>
+      this.execute(() =>
+        this.requestData<PageSlugResult>("POST", "/ai/page-slug", {
+          body,
+          options,
+        }),
       ),
     generateContent: (body: GenerateContentRequest, options?: RequestOptions) =>
       this.execute(() =>
