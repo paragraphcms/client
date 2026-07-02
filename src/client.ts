@@ -46,7 +46,6 @@ import type {
   MediaDeleteResult,
   MediaDetail,
   MediaListQuery,
-  MediaMutationResult,
   MediaUploadResult,
   Member,
   MemberListQuery,
@@ -71,7 +70,6 @@ import type {
   UpdateCollectionRequest,
   UpdateDataModelRequest,
   UpdateLabelRequest,
-  UpdateMediaRequest,
   UpdatePageRequest,
   UpdateStatusRequest,
   UploadMediaRequest,
@@ -413,6 +411,10 @@ function createUploadFormData(input: UploadMediaRequest) {
     formData.append("alt", input.alt);
   }
 
+  if (input.caption !== undefined && input.caption !== null) {
+    formData.append("caption", input.caption);
+  }
+
   return formData;
 }
 
@@ -574,17 +576,6 @@ export class Client {
     get: (mediaId: string, options?: RequestOptions) =>
       this.execute(() =>
         this.requestData<MediaDetail>("GET", `/media/${mediaId}`, {
-          options,
-        }),
-      ),
-    update: (
-      mediaId: string,
-      body: UpdateMediaRequest,
-      options?: RequestOptions,
-    ) =>
-      this.execute(() =>
-        this.requestData<MediaMutationResult>("PATCH", `/media/${mediaId}`, {
-          body,
           options,
         }),
       ),

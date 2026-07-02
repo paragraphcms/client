@@ -391,12 +391,16 @@ test(
           contentType: "image/png",
           pageId: pageId,
           slug: `${prefix}-image`,
-          alt: `${prefix} image`,
+          alt: `${prefix} image alt text`,
+          caption: `${prefix} image caption`,
         }));
 
         created.mediaId = upload.media.id;
         assertMedia(upload.media);
         assert.equal(typeof upload.editorNode, "object");
+        assert.equal(upload.editorNode.attrs.slug, `${prefix}-image`);
+        assert.equal(upload.editorNode.attrs.alt, `${prefix} image alt text`);
+        assert.equal(upload.editorNode.attrs.caption, `${prefix} image caption`);
 
         const mediaList = await expectOk(client.media.list({
           pageId: pageId,
@@ -410,13 +414,6 @@ test(
 
         const mediaDetail = await expectOk(client.media.get(upload.media.id));
         assertMediaDetail(mediaDetail);
-
-        const mediaUpdated = await expectOk(client.media.update(upload.media.id, {
-          slug: `${prefix}-updated-image`,
-          alt: `${prefix} image updated`,
-        }));
-        assert.equal(mediaUpdated.media.slug, `${prefix}-updated-image`);
-        assert.equal(mediaUpdated.media.alt, `${prefix} image updated`);
 
         const mediaDeleted = await expectOk(client.media.delete(upload.media.id));
         assert.equal(mediaDeleted.deleted, true);

@@ -262,8 +262,6 @@ test("media.upload builds multipart form data for binary buffers", async () => {
             id: "media-id",
             pageId: "page-id",
             fileName: "hero.png",
-            slug: "hero",
-            alt: "Hero",
             mimeType: "image/png",
             size: 68,
             width: 1,
@@ -285,7 +283,8 @@ test("media.upload builds multipart form data for binary buffers", async () => {
       contentType: "image/png",
       pageId: "page-id",
       slug: "hero",
-      alt: "Hero",
+      alt: "Hero alt text",
+      caption: "Hero caption",
     }),
   );
 
@@ -299,13 +298,15 @@ test("media.upload builds multipart form data for binary buffers", async () => {
   );
   assert.equal(formData.get("pageId"), "page-id");
   assert.equal(formData.get("slug"), "hero");
-  assert.equal(formData.get("alt"), "Hero");
+  assert.equal(formData.get("alt"), "Hero alt text");
+  assert.equal(formData.get("caption"), "Hero caption");
 
   const file = formData.get("file");
   assert.equal(file instanceof File, true);
   assert.equal(file.name, "hero.png");
   assert.equal(file.type, "image/png");
   assert.equal(file.size, 3);
+  assert.equal(client.media.update, undefined);
 });
 
 test("Client converts API errors into ParagraphApiError", async () => {

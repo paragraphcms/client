@@ -23,6 +23,25 @@ export type PageTranslationMode = "copy" | "translate";
 
 export type RichTextNode = Record<string, unknown>;
 
+export interface RichTextImageAttributes {
+  mediaId: string;
+  slug: string;
+  alt: string;
+  caption: string;
+  src?: string;
+  title?: string | null;
+  width?: number | null;
+  height?: number | null;
+  fileName?: string;
+  mimeType?: string;
+  size?: number | null;
+}
+
+export interface RichTextImageNode {
+  type: "image";
+  attrs: RichTextImageAttributes;
+}
+
 export type RichTextContent = RichTextNode[];
 
 export type PageContent = RichTextContent;
@@ -183,6 +202,9 @@ export interface PageSummary {
   language: string;
   contentFormat?: PageContentFormat;
   heroUrl: string | null;
+  heroSlug: string | null;
+  heroCaption: string | null;
+  heroAltText: string | null;
   collectionId: string | null;
   collection: Collection | null;
   translationGroupId: string;
@@ -222,8 +244,6 @@ export interface Media {
   id: string;
   pageId: string | null;
   fileName: string;
-  slug: string | null;
-  alt: string | null;
   mimeType: string;
   size: number;
   width: number | null;
@@ -255,9 +275,9 @@ export interface Locale {
   name: string;
 }
 
-export interface EditorNode {
-  [key: string]: unknown;
-}
+export type EditorNode = RichTextImageNode & {
+  attrs: RichTextImageAttributes & { src: string };
+};
 
 export interface PageMutationResult {
   message: string;
@@ -273,11 +293,6 @@ export interface MediaUploadResult {
   message: string;
   media: Media;
   editorNode: EditorNode;
-}
-
-export interface MediaMutationResult {
-  message: string;
-  media: MediaDetail;
 }
 
 export interface MediaDeleteResult {
@@ -416,6 +431,9 @@ export interface GetPageQuery {
 export interface CreatePageRequest {
   title?: string;
   heroUrl?: string | null;
+  heroSlug?: string | null;
+  heroCaption?: string | null;
+  heroAltText?: string | null;
   collectionId?: string | null;
   dataModelId?: string | null;
   language?: string;
@@ -465,11 +483,7 @@ export interface UploadMediaRequest {
   pageId: string;
   slug?: string | null;
   alt?: string | null;
-}
-
-export interface UpdateMediaRequest {
-  slug?: string | null;
-  alt?: string | null;
+  caption?: string | null;
 }
 
 export interface MemberListQuery extends ListQuery {

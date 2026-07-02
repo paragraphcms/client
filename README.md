@@ -123,7 +123,7 @@ if (error) {
 console.log(locales.map((locale) => locale.code));
 ```
 
-### Upload and Update Media
+### Upload Media
 
 ```ts
 const { data: uploadedMedia, error: uploadError } = await client.media.upload({
@@ -132,7 +132,8 @@ const { data: uploadedMedia, error: uploadError } = await client.media.upload({
   contentType: "image/png",
   pageId: "page-id",
   slug: "hero-image",
-  alt: "Hero image caption",
+  alt: "Team presenting the product dashboard",
+  caption: "The Paragraph dashboard during a team presentation.",
 });
 
 if (uploadError) {
@@ -140,22 +141,12 @@ if (uploadError) {
   return;
 }
 
-const { data: updatedMedia, error: updateError } = await client.media.update(
-  uploadedMedia.media.id,
-  {
-    slug: "hero-image-updated",
-    alt: "Updated hero image caption",
-  },
-);
-
-if (updateError) {
-  console.error(updateError.message);
-  return;
-}
-
-console.log(updatedMedia.media.slug);
-console.log(updatedMedia.media.alt);
+console.log(uploadedMedia.editorNode.attrs.slug);
+console.log(uploadedMedia.editorNode.attrs.alt);
+console.log(uploadedMedia.editorNode.attrs.caption);
 ```
+
+Image `slug`, `alt`, and `caption` belong to the returned Tiptap node and page content, not to the media resource itself.
 
 ## Framework Guides
 

@@ -110,6 +110,9 @@ export function assertPageSummary(page, { expectContent = false } = {}) {
     true,
   );
   assertNullableString(page.heroUrl);
+  assertNullableString(page.heroSlug);
+  assertNullableString(page.heroCaption);
+  assertNullableString(page.heroAltText);
   assertNullableString(page.collectionId);
   if (page.collection !== null) {
     assertCollection(page.collection);
@@ -166,8 +169,6 @@ export function assertMedia(media) {
   assert.equal(typeof media.id, "string");
   assertNullableString(media.pageId);
   assert.equal(typeof media.fileName, "string");
-  assertNullableString(media.slug);
-  assertNullableString(media.alt);
   assert.equal(typeof media.mimeType, "string");
   assert.equal(typeof media.size, "number");
   assertNullableNumber(media.width);
