@@ -176,6 +176,7 @@ export interface CollectionSummary {
   name: string;
   description: string | null;
   defaultDataModelId: string | null;
+  categories: string[];
   teamIds: string[];
   pageCount: number;
   lastModifiedAt: string | null;
@@ -216,6 +217,7 @@ export interface PageSummary {
   author: Member | null;
   reviewerId: string | null;
   reviewer: Member | null;
+  categories: string[];
   labels: Label[];
   fields: Record<string, unknown>;
   content?: PageContent;
@@ -414,6 +416,7 @@ export interface PageListQuery extends ListQuery {
   publishedBefore?: string;
   hasPublished?: boolean;
   published?: boolean;
+  category?: string;
 }
 
 export type PageListItem<
@@ -461,6 +464,7 @@ export interface CreatePageRequest {
   authorId?: string | null;
   reviewerId?: string | null;
   publishedAt?: string | null;
+  categories?: string[];
   contentFormat?: PageContentFormat;
   content?: PageContent;
   fields?: Record<string, unknown>;
@@ -476,6 +480,7 @@ export interface CreatePageTranslationRequest {
   language: string;
   mode?: PageTranslationMode;
   model?: string;
+  copyStatus?: boolean;
 }
 
 export interface TranslatePageRequest {
@@ -496,6 +501,7 @@ export interface CreateCollectionRequest {
   name: string;
   description?: string | null;
   defaultDataModelId?: string | null;
+  categories?: string[];
   teamIds?: string[];
 }
 

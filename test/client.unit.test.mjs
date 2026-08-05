@@ -21,7 +21,7 @@ test("Client requires an API key", () => {
   assert.throws(() => new Client({ apiKey: "   " }), ParagraphClientError);
 });
 
-test("Client uses the official API endpoint and maps hasPublished to published", async () => {
+test("Client preserves publication and category filters", async () => {
   const calls = [];
   const client = new Client({
     apiKey: "test-key",
@@ -47,6 +47,9 @@ test("Client uses the official API endpoint and maps hasPublished to published",
       labelIds: ["label-a", "label-b"],
       deleted: "include",
       published: false,
+      publishedAfter: "2026-01-01T00:00:00.000Z",
+      publishedBefore: "2026-12-31T23:59:59.999Z",
+      category: "Guides",
     }),
   );
 
@@ -61,7 +64,16 @@ test("Client uses the official API endpoint and maps hasPublished to published",
   assert.equal(url.searchParams.get("includeContent"), "true");
   assert.equal(url.searchParams.get("labelIds"), "label-a,label-b");
   assert.equal(url.searchParams.get("deleted"), "include");
+  assert.equal(url.searchParams.get("category"), "Guides");
   assert.equal(url.searchParams.get("published"), "false");
+  assert.equal(
+    url.searchParams.get("publishedAfter"),
+    "2026-01-01T00:00:00.000Z",
+  );
+  assert.equal(
+    url.searchParams.get("publishedBefore"),
+    "2026-12-31T23:59:59.999Z",
+  );
   assert.equal(url.searchParams.get("page"), null);
   assert.equal(url.searchParams.get("limit"), null);
   assert.equal(request.method, "GET");
@@ -69,14 +81,12 @@ test("Client uses the official API endpoint and maps hasPublished to published",
   assert.equal(request.headers.get("accept"), "application/json");
 });
 
-test("Client still accepts the legacy published filter", async () => {
+test("Client maps the legacy hasPublished filter to published", async () => {
   const calls = [];
   const client = new Client({
     apiKey: "test-key",
     fetch: async (input, init) => {
-      const url = new URL(toRequest(input, init).url);
-      calls.push(url);
-
+      calls.push(new URL(toRequest(input, init).url));
       return Response.json({
         data: [],
         meta: {
@@ -91,10 +101,11 @@ test("Client still accepts the legacy published filter", async () => {
     },
   });
 
-  await expectOk(client.pages.list({ published: false }));
+  await expectOk(client.pages.list({ hasPublished: false }));
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].searchParams.get("published"), "false");
+  assert.equal(calls[0].searchParams.get("hasPublished"), null);
 });
 
 test("Client rejects baseUrl and apiUrl overrides", () => {
@@ -150,12 +161,14 @@ test("pages.list preserves collection and collectionId query params", async () =
     client.pages.list({
       collection: "Blog",
       collectionId: "collection-123",
+      category: "Guides",
     }),
   );
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].searchParams.get("collection"), "Blog");
   assert.equal(calls[0].searchParams.get("collectionId"), "collection-123");
+  assert.equal(calls[0].searchParams.get("category"), "Guides");
   assert.equal(calls[0].searchParams.get("published"), "true");
   assert.equal(calls[0].searchParams.get("requiredSlug"), null);
   assert.equal(
@@ -250,6 +263,71 @@ test("pages.list with explicit pagination preserves the list response meta", asy
   assert.equal(listed.data.length, 2);
   assert.equal(listed.meta.totalItems, 3);
   assert.equal(listed.meta.hasNextPage, true);
+});
+
+test("collection category helpers use the collection category API", async () => {
+  const calls = [];
+  const collection = {
+    id: "collection-1",
+    name: "Docs",
+    description: null,
+    defaultDataModelId: null,
+    categories: ["Guides"],
+    teamIds: [],
+    pageCount: 0,
+    lastModifiedAt: null,
+    defaultDataModel: null,
+  };
+  const client = new Client({
+    apiKey: "test-key",
+    fetch: async (input, init) => {
+      const request = toRequest(input, init);
+      calls.push({
+        request,
+        body: await readJsonBody(request),
+      });
+      const url = new URL(request.url);
+
+      if (request.method === "GET") {
+        return Response.json({ data: collection });
+      }
+
+      return Response.json({
+        data: {
+          message: "Collection updated.",
+          collection,
+        },
+      });
+    },
+  });
+
+  const listed = await expectOk(client.collections.categories.list("collection-1"));
+  await expectOk(client.collections.categories.set("collection-1", ["Guides", "News"]));
+  await expectOk(client.collections.categories.add("collection-1", "News"));
+  await expectOk(client.collections.categories.remove("collection-1", "Release notes"));
+
+  assert.deepEqual(listed, ["Guides"]);
+  assert.equal(calls.length, 4);
+  assert.equal(calls[0].request.method, "GET");
+  assert.equal(
+    new URL(calls[0].request.url).pathname,
+    "/v1/collections/collection-1",
+  );
+  assert.equal(calls[1].request.method, "PATCH");
+  assert.deepEqual(calls[1].body, {
+    categories: ["Guides", "News"],
+  });
+  assert.equal(calls[2].request.method, "POST");
+  assert.equal(
+    new URL(calls[2].request.url).pathname,
+    "/v1/collections/collection-1/categories",
+  );
+  assert.deepEqual(calls[2].body, { category: "News" });
+  assert.equal(calls[3].request.method, "DELETE");
+  assert.equal(
+    new URL(calls[3].request.url).pathname,
+    "/v1/collections/collection-1/categories/Release%20notes",
+  );
 });
 
 test("media.upload builds multipart form data for binary buffers", async () => {
@@ -658,8 +736,13 @@ test("pages workflow helpers target the expected endpoints", async () => {
   );
   await expectOk(client.pages.setStatus("page-1", "status-1"));
   await expectOk(client.pages.setCollection("page-1", null));
+  await expectOk(
+    client.pages.update("page-1", {
+      publishedAt: "2026-08-05T12:00:00.000Z",
+    }),
+  );
 
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 4);
 
   assert.equal(calls[0].request.method, "POST");
   assert.equal(
@@ -682,6 +765,12 @@ test("pages workflow helpers target the expected endpoints", async () => {
   assert.equal(new URL(calls[2].request.url).pathname, "/v1/pages/page-1");
   assert.deepEqual(calls[2].body, {
     collectionId: null,
+  });
+
+  assert.equal(calls[3].request.method, "PATCH");
+  assert.equal(new URL(calls[3].request.url).pathname, "/v1/pages/page-1");
+  assert.deepEqual(calls[3].body, {
+    publishedAt: "2026-08-05T12:00:00.000Z",
   });
 });
 

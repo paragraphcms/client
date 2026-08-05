@@ -249,6 +249,7 @@ test(
         description: "integration test collection",
         defaultDataModelId: createdDataModel.dataModel.id,
         teamIds: [`${prefix}-team`],
+        categories: ["Guides", "Updates"],
       }));
 
       created.collectionId = createdCollection.collection.id;
@@ -266,6 +267,21 @@ test(
         updatedCollection.collection.name,
         `${prefix}-collection-updated`,
       );
+
+      const categories = await expectOk(
+        client.collections.categories.list(createdCollection.collection.id),
+      );
+      assert.deepEqual(categories, ["Guides", "Updates"]);
+
+      const addedCategory = await expectOk(
+        client.collections.categories.add(createdCollection.collection.id, "News"),
+      );
+      assert.equal(addedCategory.collection.categories.includes("News"), true);
+
+      const removedCategory = await expectOk(
+        client.collections.categories.remove(createdCollection.collection.id, "News"),
+      );
+      assert.equal(removedCategory.collection.categories.includes("News"), false);
 
       const collections = await expectOk(client.collections.list({
         q: prefix,
@@ -322,6 +338,7 @@ test(
           slug: `${prefix}-page`,
           metaName: `${prefix} meta`,
           metaDescription: `${prefix} description`,
+          categories: ["Guides"],
         }));
 
         const pageId = pageResult.page.id;
@@ -331,6 +348,7 @@ test(
         const listed = await expectOk(client.pages.list({
           q: prefix,
           collection: `${prefix}-collection-updated`,
+          category: "Guides",
           published: false,
           includeContent: true,
           labelIds: created.labelIds,

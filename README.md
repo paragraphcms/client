@@ -47,15 +47,24 @@ console.log(data.title);
 
 On success, `error` is `null`. On failure, `data` is `null` and `error` is a `ParagraphApiError` or `ParagraphClientError`.
 
-### Get Published Pages or Pages From a Collection
+### List Pages by Publication, Status, Collection, or Category
 
 ```ts
-const { data: publishedPages, error: publishedPagesError } =
-  await client.pages.list();
-
-const { data: allPages, error: allPagesError } = await client.pages.list({
-  published: false,
+const { data: publishedPages, error: publishedPagesError } = await client.pages.list({
+  published: true,
 });
+
+const { data: unpublishedPages, error: unpublishedPagesError } =
+  await client.pages.list({ published: false });
+
+const { data: pagesPublishedIn2026, error: publicationWindowError } =
+  await client.pages.list({
+    publishedAfter: "2026-01-01T00:00:00.000Z",
+    publishedBefore: "2026-12-31T23:59:59.999Z",
+  });
+
+const { data: pagesWithPublishedStatus, error: statusError } =
+  await client.pages.list({ statusType: "published" });
 
 const { data: collectionPages, error: collectionPagesError } =
   await client.pages.list({
@@ -67,6 +76,11 @@ const { data: collectionPagesById, error: collectionPagesByIdError } =
   collectionId: "collection-id",
 });
 
+const { data: guidePages, error: guidePagesError } = await client.pages.list({
+  collectionId: "collection-id",
+  category: "Guides",
+});
+
 const { data: pagesWithSlugs, error: pagesWithSlugsError } =
   await client.pages.list({
   requiredSlug: true,
@@ -74,9 +88,12 @@ const { data: pagesWithSlugs, error: pagesWithSlugsError } =
 
 if (
   publishedPagesError ||
-  allPagesError ||
+  unpublishedPagesError ||
+  publicationWindowError ||
+  statusError ||
   collectionPagesError ||
   collectionPagesByIdError ||
+  guidePagesError ||
   pagesWithSlugsError
 ) {
   console.error("Request failed.");
@@ -85,15 +102,38 @@ if (
 
 console.log(publishedPages.length);
 console.log(publishedPages.map((page) => page.title));
-console.log(allPages.map((page) => page.title));
+console.log(unpublishedPages.map((page) => page.title));
+console.log(pagesPublishedIn2026.map((page) => page.publishedAt));
+console.log(pagesWithPublishedStatus.map((page) => page.status?.name));
 console.log(collectionPages.map((page) => page.title));
 console.log(collectionPagesById.map((page) => page.title));
+console.log(guidePages.map((page) => page.title));
 console.log(pagesWithSlugs.map((page) => page.slug.toUpperCase()));
 ```
 
-`client.pages.list()` now returns only published pages by default. To include unpublished pages, pass `published: false`.
+Every page exposes `publishedAt`. Page lists support `published`, `publishedAfter`, and `publishedBefore`; the legacy SDK alias `hasPublished` is also accepted and mapped to `published`. `client.pages.list()` defaults to `published: true`, while `published: false` returns pages without a publication date. Status filtering remains independently available through `statusType: "published"`.
 When neither `page` nor `limit` is passed, `client.pages.list()` fetches every matching API page and returns the pages array directly. Pass `page` or `limit` to receive a paginated response with `data` and `meta`.
 Passing `requiredSlug: true` also narrows `page.slug` to `string` in TypeScript.
+
+### Manage Collection Categories
+
+Categories belong to a collection and can then be assigned to its pages.
+
+```ts
+const created = await client.collections.create({
+  name: "Knowledge Base",
+  categories: ["Guides", "Release notes"],
+});
+
+if (created.error) {
+  console.error(created.error.message);
+  return;
+}
+
+await client.collections.categories.add(created.data.collection.id, "News");
+await client.collections.categories.set(created.data.collection.id, ["Guides", "News"]);
+await client.collections.categories.remove(created.data.collection.id, "News");
+```
 
 ### Get a Page by Slug
 

@@ -91,6 +91,10 @@ export function assertCollection(collection) {
   assert.equal(typeof collection.name, "string");
   assertNullableString(collection.description);
   assertNullableString(collection.defaultDataModelId);
+  assert.equal(Array.isArray(collection.categories), true);
+  for (const category of collection.categories) {
+    assert.equal(typeof category, "string");
+  }
   assert.equal(Array.isArray(collection.teamIds), true);
   assert.equal(typeof collection.pageCount, "number");
   assertNullableString(collection.lastModifiedAt);
@@ -142,6 +146,10 @@ export function assertPageSummary(page, { expectContent = false } = {}) {
   assertNullableString(page.metaName);
   assertNullableString(page.metaDescription);
   assertNullableString(page.publishedAt);
+  assert.equal(Array.isArray(page.categories), true);
+  for (const category of page.categories) {
+    assert.equal(typeof category, "string");
+  }
   assertNullableString(page.deletedAt);
   assertNullableString(page.createdAt);
   assertNullableString(page.updatedAt);

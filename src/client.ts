@@ -608,6 +608,50 @@ export class Client {
           },
         ),
       ),
+    categories: {
+      list: (collectionId: string, options?: RequestOptions) =>
+        this.execute(async () => {
+          const collection = await this.requestData<Collection>(
+            "GET",
+            `/collections/${collectionId}`,
+            { options },
+          );
+
+          return collection.categories;
+        }),
+      set: (
+        collectionId: string,
+        categories: string[],
+        options?: RequestOptions,
+      ) => this.collections.update(collectionId, { categories }, options),
+      add: (
+        collectionId: string,
+        category: string,
+        options?: RequestOptions,
+      ) =>
+        this.execute(() =>
+          this.requestData<CollectionMutationResult>(
+            "POST",
+            `/collections/${collectionId}/categories`,
+            {
+              body: { category },
+              options,
+            },
+          ),
+        ),
+      remove: (
+        collectionId: string,
+        category: string,
+        options?: RequestOptions,
+      ) =>
+        this.execute(() =>
+          this.requestData<CollectionMutationResult>(
+            "DELETE",
+            `/collections/${collectionId}/categories/${encodeURIComponent(category)}`,
+            { options },
+          ),
+        ),
+    },
     delete: (collectionId: string, options?: RequestOptions) =>
       this.execute(() =>
         this.requestData<DeleteResult>("DELETE", `/collections/${collectionId}`, {
